@@ -102,6 +102,23 @@ regenerate: fixture examples
     cargo run -q -p zag -- emit --facts target/example.facts --source fixtures/expected/example.rs --report fixtures/expected/example.report.txt
     cargo test -p zag
 
+# Ports one example and prints what came out. `just port tokenizer`
+#
+# Writes into target/, so the output checked in under examples/ is left alone.
+# `just examples` is the one that rewrites those. `just names` lists what can
+# go here, and the Zig each name refers to is examples/<name>/src/main.zig.
+port name:
+    @cargo run -q -p zag -- facts --example {{name}} --output target/{{name}}.facts
+    @cargo run -q -p zag -- emit --facts target/{{name}}.facts --source target/{{name}}.rs --report target/{{name}}.report.txt
+    @echo "=== target/{{name}}.rs ==="
+    @cat target/{{name}}.rs
+    @echo "=== target/{{name}}.report.txt ==="
+    @cat target/{{name}}.report.txt
+
+# Lists the examples that can be ported
+@names:
+    cargo run -q -p zag -- examples
+
 # Shows the ownership report for the worked example
 report: fixture
     @cat target/example.report.txt
