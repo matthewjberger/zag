@@ -20,6 +20,10 @@ pub mod shapes {
     include!("../../../examples/shapes/expected/port.rs");
 }
 
+pub mod telemetry {
+    include!("../../../examples/telemetry/expected/port.rs");
+}
+
 pub mod tokenizer {
     include!("../../../examples/tokenizer/expected/port.rs");
 }

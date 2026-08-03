@@ -7,7 +7,8 @@ use zag_analysis::analyze;
 use zag_emit::lower::lower;
 use zag_facts::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern, push_expression,
-    push_field_assignment_with, push_integer_type, push_slice_type, push_string, struct_type,
+    push_field_assignment_with, push_integer_type, push_optional_type, push_slice_type,
+    push_string, struct_type,
 };
 use zag_facts::fixture::example_tables;
 use zag_facts::tables::{
@@ -19,6 +20,7 @@ use zag_render::render;
 struct Holder {
     tables: Tables,
     word: TypeId,
+    optional: TypeId,
     fields: Vec<FieldId>,
     initialize: FunctionId,
 }
@@ -31,13 +33,18 @@ fn holder(field_types: &[&str]) -> Holder {
     let byte = push_integer_type(&mut tables, 8, false);
     let word = push_integer_type(&mut tables, 32, false);
     let bytes = push_slice_type(&mut tables, byte);
+    let optional = push_optional_type(&mut tables, bytes);
     let allocator_name = intern(&mut tables.strings, b"Allocator");
     let allocator = zag_facts::build::push_opaque_type(&mut tables, allocator_name);
 
     let owner = declare_struct(&mut tables, b"Holder", 24, 8, 0);
     let mut fields = Vec::new();
     for (index, declared) in field_types.iter().enumerate() {
-        let kind = if *declared == "bytes" { bytes } else { word };
+        let kind = match *declared {
+            "bytes" => bytes,
+            "optional" => optional,
+            _ => word,
+        };
         fields.push(declare_field(
             &mut tables,
             owner,
@@ -59,6 +66,7 @@ fn holder(field_types: &[&str]) -> Holder {
     Holder {
         tables,
         word,
+        optional,
         fields,
         initialize,
     }
@@ -108,6 +116,41 @@ fn ported(holder: &Holder) -> String {
     let analysis = analyze(&holder.tables);
     let ast = lower(&holder.tables, &analysis.ownership);
     String::from_utf8(render(&ast).expect("the tree must render")).expect("the output is text")
+}
+
+fn optional_expression(holder: &mut Holder, kind: ExpressionKind, parameter: u32) -> ExpressionId {
+    push_expression(
+        &mut holder.tables,
+        kind,
+        StringId(NO_INDEX),
+        parameter,
+        holder.optional,
+        FieldId(NO_INDEX),
+        &[],
+    )
+}
+
+#[test]
+fn an_optional_field_set_to_null_comes_across_as_none() {
+    let mut holder = holder(&["optional"]);
+    let value = optional_expression(&mut holder, ExpressionKind::Null, NO_INDEX);
+    assign_from(&mut holder, 0, AssignmentSource::StaticLiteral, value);
+    let source = ported(&holder);
+    assert!(
+        source.contains("pub field0: Option<&'static [u8]>,"),
+        "{source}"
+    );
+    assert!(source.contains("field0: None,"), "{source}");
+}
+
+#[test]
+fn a_value_going_into_an_optional_field_is_wrapped_in_some() {
+    let mut holder = holder(&["optional"]);
+    let value = optional_expression(&mut holder, ExpressionKind::Parameter, 1);
+    assign_from(&mut holder, 0, AssignmentSource::Parameter, value);
+    let source = ported(&holder);
+    assert!(source.contains("pub field0: Option<&'a [u8]>,"), "{source}");
+    assert!(source.contains("field0: Some(body),"), "{source}");
 }
 
 #[test]

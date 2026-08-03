@@ -127,6 +127,74 @@ fn a_boxed_slice_renders_as_an_owned_slice() {
 }
 
 #[test]
+fn an_option_renders_around_whatever_it_holds() {
+    assert_eq!(
+        render_one_type(|ast| {
+            let element = path(ast, b"u8");
+            let body = push_node(
+                ast,
+                NodeKind::TypeSliceBody,
+                absent(),
+                absent(),
+                0,
+                0,
+                &[element],
+            );
+            let boxed = push_node(ast, NodeKind::TypeBoxed, absent(), absent(), 0, 0, &[body]);
+            push_node(
+                ast,
+                NodeKind::TypeOption,
+                absent(),
+                absent(),
+                0,
+                0,
+                &[boxed],
+            )
+        }),
+        "Option<Box<[u8]>>"
+    );
+}
+
+#[test]
+fn an_array_renders_its_length_beside_its_element() {
+    assert_eq!(
+        render_one_type(|ast| {
+            let element = path(ast, b"u32");
+            push_node(
+                ast,
+                NodeKind::TypeArray,
+                absent(),
+                absent(),
+                4,
+                0,
+                &[element],
+            )
+        }),
+        "[u32; 4]"
+    );
+}
+
+#[test]
+fn an_array_of_arrays_nests() {
+    assert_eq!(
+        render_one_type(|ast| {
+            let element = path(ast, b"u8");
+            let inner = push_node(
+                ast,
+                NodeKind::TypeArray,
+                absent(),
+                absent(),
+                2,
+                0,
+                &[element],
+            );
+            push_node(ast, NodeKind::TypeArray, absent(), absent(), 3, 0, &[inner])
+        }),
+        "[[u8; 2]; 3]"
+    );
+}
+
+#[test]
 fn each_lifetime_renders_its_own_name() {
     let cases = [
         (Lifetime::Borrow, "&'a [u8]"),

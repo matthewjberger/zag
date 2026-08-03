@@ -92,6 +92,8 @@ fn type_kind_from_raw(value: u32) -> Result<TypeKind, DecodeError> {
         4 => Ok(TypeKind::Pointer),
         5 => Ok(TypeKind::Struct),
         6 => Ok(TypeKind::Opaque),
+        7 => Ok(TypeKind::Optional),
+        8 => Ok(TypeKind::Array),
         other => Err(DecodeError::UnknownEnumValue {
             column: "types.kind",
             value: other,
@@ -159,6 +161,7 @@ fn expression_kind_from_raw(value: u32) -> Result<crate::tables::ExpressionKind,
         4 => Ok(ExpressionKind::Allocation),
         5 => Ok(ExpressionKind::StructLiteral),
         6 => Ok(ExpressionKind::Unsupported),
+        7 => Ok(ExpressionKind::Null),
         other => Err(DecodeError::UnknownEnumValue {
             column: "expressions.kind",
             value: other,
@@ -183,6 +186,7 @@ fn encode_types(out: &mut Vec<u8>, tables: &Tables) {
     let types = &tables.types;
     write_u32_column(out, &raw_from(&types.kind, |value| *value as u32));
     write_u32_column(out, &raw_from(&types.element, |value| value.0));
+    write_u32_column(out, &types.count);
     write_u32_column(out, &raw_from(&types.name, |value| value.0));
     write_u32_column(out, &types.size);
     write_u32_column(out, &types.alignment);
@@ -294,6 +298,7 @@ fn decode_types(bytes: &[u8], cursor: &mut usize, tables: &mut Tables) -> Result
         .into_iter()
         .map(TypeId)
         .collect();
+    types.count = read_u32_column(bytes, cursor)?;
     types.name = read_u32_column(bytes, cursor)?
         .into_iter()
         .map(StringId)

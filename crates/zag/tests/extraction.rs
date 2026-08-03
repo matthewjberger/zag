@@ -231,6 +231,20 @@ fn every_memory_operation_in_the_tables_happens_in_the_program() {
     }
 }
 
+/// The same set the frontend calls a literal. A table claiming a static
+/// literal is claiming the frontend would have read one here.
+fn is_literal(value: &str) -> bool {
+    value == "null"
+        || value.starts_with('"')
+        || value.starts_with("&.{")
+        || value.starts_with(".{")
+        || value.starts_with("0x")
+        || value
+            .chars()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_digit())
+}
+
 #[test]
 fn every_field_assignment_in_the_tables_is_a_field_the_program_writes() {
     for name in runnable_names() {
@@ -262,7 +276,7 @@ fn every_field_assignment_in_the_tables_is_a_field_the_program_writes() {
                     "{name}: {field} is assigned {value:?}, which is not a parameter of {owner}"
                 ),
                 AssignmentSource::StaticLiteral => assert!(
-                    value.starts_with('"') || value.starts_with("&.{") || value.starts_with(".{"),
+                    is_literal(value),
                     "{name}: {field} is assigned {value:?}, which is not a literal"
                 ),
                 AssignmentSource::Unknown => {}

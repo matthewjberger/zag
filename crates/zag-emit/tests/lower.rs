@@ -3,8 +3,8 @@ use zag_analysis::ownership::{Confidence, Ownership, OwnershipClass};
 use zag_emit::lower::lower;
 use zag_emit::report::render_report;
 use zag_facts::build::{
-    intern, push_field, push_integer_type, push_pointer_type, push_slice_type, push_struct,
-    push_struct_type,
+    intern, push_array_type, push_field, push_integer_type, push_optional_type, push_pointer_type,
+    push_slice_type, push_struct, push_struct_type,
 };
 use zag_facts::fixture::example_tables;
 use zag_facts::tables::{TypeKind, empty_tables};
@@ -205,6 +205,7 @@ fn a_boolean_field_becomes_a_boolean() {
             let types = &mut tables.types;
             types.kind.push(TypeKind::Bool);
             types.element.push(TypeId(zag_facts::NO_INDEX));
+            types.count.push(0);
             types.name.push(zag_facts::StringId(zag_facts::NO_INDEX));
             types.size.push(1);
             types.alignment.push(1);
@@ -215,6 +216,70 @@ fn a_boolean_field_becomes_a_boolean() {
         OwnershipClass::Value,
     );
     assert!(source.contains("pub value: bool,"), "{source}");
+}
+
+#[test]
+fn an_array_keeps_the_length_the_zig_declared() {
+    let source = one_field_source(
+        |tables| {
+            let element = push_integer_type(tables, 32, false);
+            push_array_type(tables, element, 4, 16)
+        },
+        OwnershipClass::Value,
+    );
+    assert!(source.contains("pub value: [u32; 4],"), "{source}");
+}
+
+#[test]
+fn an_optional_scalar_becomes_an_option_of_that_scalar() {
+    let source = one_field_source(
+        |tables| {
+            let element = push_integer_type(tables, 32, false);
+            push_optional_type(tables, element)
+        },
+        OwnershipClass::Value,
+    );
+    assert!(source.contains("pub value: Option<u32>,"), "{source}");
+}
+
+#[test]
+fn an_owned_optional_slice_is_an_optional_box_rather_than_a_box_of_an_option() {
+    let source = one_field_source(
+        |tables| {
+            let element = push_integer_type(tables, 8, false);
+            let slice = push_slice_type(tables, element);
+            push_optional_type(tables, slice)
+        },
+        OwnershipClass::Owned,
+    );
+    assert!(source.contains("pub value: Option<Box<[u8]>>,"), "{source}");
+}
+
+#[test]
+fn a_borrowed_optional_slice_still_gives_the_struct_a_lifetime() {
+    let source = one_field_source(
+        |tables| {
+            let element = push_integer_type(tables, 8, false);
+            let slice = push_slice_type(tables, element);
+            push_optional_type(tables, slice)
+        },
+        OwnershipClass::Borrowed,
+    );
+    assert!(source.contains("pub struct Holder<'a> {"), "{source}");
+    assert!(source.contains("pub value: Option<&'a [u8]>,"), "{source}");
+}
+
+#[test]
+fn an_array_of_a_struct_names_that_struct() {
+    let source = one_field_source(
+        |tables| {
+            let name = intern(&mut tables.strings, b"Other");
+            let other = push_struct_type(tables, name, 4, 4);
+            push_array_type(tables, other, 3, 12)
+        },
+        OwnershipClass::Value,
+    );
+    assert!(source.contains("pub value: [Other; 3],"), "{source}");
 }
 
 #[test]

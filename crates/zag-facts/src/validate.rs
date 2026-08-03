@@ -89,6 +89,7 @@ fn check_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) {
     let types = &tables.types;
     let count = type_count(types);
     expect_length(violations, "types", "element", count, types.element.len());
+    expect_length(violations, "types", "count", count, types.count.len());
     expect_length(violations, "types", "name", count, types.name.len());
     expect_length(violations, "types", "size", count, types.size.len());
     expect_length(

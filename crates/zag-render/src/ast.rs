@@ -30,6 +30,8 @@ pub enum NodeKind {
     ExpressionPath = 19,
     ExpressionCall = 20,
     ExpressionTry = 21,
+    TypeOption = 22,
+    TypeArray = 23,
 }
 
 #[repr(u32)]

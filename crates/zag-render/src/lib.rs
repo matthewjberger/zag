@@ -193,6 +193,20 @@ fn render_type(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
             render_type(out, ast, only_child(ast, node)?)?;
             Ok(())
         }
+        NodeKind::TypeOption => {
+            out.extend_from_slice(b"Option<");
+            render_type(out, ast, only_child(ast, node)?)?;
+            out.extend_from_slice(b">");
+            Ok(())
+        }
+        NodeKind::TypeArray => {
+            out.extend_from_slice(b"[");
+            render_type(out, ast, only_child(ast, node)?)?;
+            out.extend_from_slice(b"; ");
+            out.extend_from_slice(ast.number[node.0 as usize].to_string().as_bytes());
+            out.extend_from_slice(b"]");
+            Ok(())
+        }
         NodeKind::TypeOptionNonNull => {
             out.extend_from_slice(b"Option<core::ptr::NonNull<");
             render_type(out, ast, only_child(ast, node)?)?;

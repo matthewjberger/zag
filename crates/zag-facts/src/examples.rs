@@ -1,6 +1,7 @@
 pub mod conflict;
 pub mod netpacket;
 pub mod shapes;
+pub mod telemetry;
 pub mod tokenizer;
 pub mod wordcount;
 
@@ -9,11 +10,12 @@ use crate::tables::Tables;
 /// Every name here has a Zig project under `examples/<name>` that builds on
 /// its own, and the tables below are what a frontend reading that project
 /// would hand over. The two are kept in step by hand until the frontend lands.
-pub const NAMES: [&str; 6] = [
+pub const NAMES: [&str; 7] = [
     "conflict",
     "fixture",
     "netpacket",
     "shapes",
+    "telemetry",
     "tokenizer",
     "wordcount",
 ];
@@ -28,6 +30,7 @@ pub fn tables_for(name: &str) -> Option<Tables> {
         "fixture" => Some(crate::fixture::example_tables()),
         "netpacket" => Some(netpacket::tables()),
         "shapes" => Some(shapes::tables()),
+        "telemetry" => Some(telemetry::tables()),
         "tokenizer" => Some(tokenizer::tables()),
         "wordcount" => Some(wordcount::tables()),
         _ => None,

@@ -72,6 +72,7 @@ fn an_unknown_enumeration_value_is_rejected() {
     let mut tables = empty_tables();
     tables.types.kind.push(TypeKind::Integer);
     tables.types.element.push(TypeId(0));
+    tables.types.count.push(0);
     tables.types.name.push(StringId(0));
     tables.types.size.push(4);
     tables.types.alignment.push(4);

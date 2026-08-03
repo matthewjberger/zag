@@ -1,0 +1,24 @@
+zag ownership report
+target: x86_64-linux
+fields: 3
+
+Frame.channels
+  class: value
+  confidence: high
+
+Frame.label
+  class: static
+  confidence: high
+  evidence: assigned from a static literal (init)
+
+Frame.source
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+functions: 3
+  Frame.init: ported, as the constructor
+  Frame.deinit: disappears, Drop frees what it freed
+  main: still to write

@@ -96,6 +96,14 @@ carries nothing so the port carries nothing either. Variants come back in
 Pascal case, because a port that keeps the Zig spelling is a port the compiler
 complains about.
 
+`telemetry` covers the two types that are not one thing. `Frame.channels` is a
+`[4]u32` and stays a fixed array rather than becoming a slice, so its length
+survives the port. `Frame.label` is a `?[]const u8` set to `null`, and the
+ownership wrapper goes inside the option rather than around it, which is why it
+comes back as `Option<&'static [u8]>` and not an option of a reference to an
+option. A field the Zig only ever sets to null is still a field the constructor
+has to fill, so `null` is one of the expressions the port can write.
+
 `conflict` is the one that produces a finding rather than a port. `makeCache`
 takes an allocator, one caller hands it the heap and another hands it an arena,
 so the field has no single owner and the report says

@@ -121,9 +121,17 @@ The type a field gets is its Zig type crossed with its ownership class.
 | `[]const u8` | `unknown` | `Option<core::ptr::NonNull<[u8]>>` |
 | `*T` | `owned` | `Box<T>` |
 | `*T` | `borrowed` | `&'a T` |
+| `?[]const u8` | `static` | `Option<&'static [u8]>` |
+| `?[]const u8` | `owned` | `Option<Box<[u8]>>` |
+| `[4]u32` | `value` | `[u32; 4]` |
 | `u8`, `u16`, `u32`, `u64` | `value` | `u8`, `u16`, `u32`, `u64` |
 | `bool` | `value` | `bool` |
 | `void` | `value` | `()` |
+
+An optional keeps its ownership wrapper inside itself. `?[]const u8` that is
+owned is an optional box, not a box of an optional, and the class is decided by
+what the option holds rather than by the option. An array keeps its length,
+because a `[4]u32` that ports to a slice has lost something the Zig knew.
 
 Zig has an integer of every width and Rust has five. A `u3` field widens to
 `u8`, a `u12` to `u16`, and so on. Widening is safe for storage and changes

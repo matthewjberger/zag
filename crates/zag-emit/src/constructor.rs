@@ -132,8 +132,14 @@ fn lower_expression(
                 let inner = expression_children(tables, expression)
                     .next()
                     .and_then(|slot| tables.expressions.children.get(slot).copied());
+                let declared = tables
+                    .fields
+                    .field_type
+                    .get(field.0 as usize)
+                    .copied()
+                    .unwrap_or(zag_facts::TypeId(NO_INDEX));
                 let value = match inner {
-                    Some(child) => lower_expression(ast, tables, function, child),
+                    Some(child) => lower_value(ast, tables, function, declared, child),
                     None => return unsupported(ast),
                 };
                 let text = name_of(tables, tables.fields.name.get(field.0 as usize));
@@ -156,8 +162,41 @@ fn lower_expression(
                 &children,
             )
         }
+        ExpressionKind::Null => {
+            let name = push_string(&mut ast.strings, b"None");
+            push_node(ast, NodeKind::ExpressionPath, name, absent(), 0, 0, &[])
+        }
         ExpressionKind::Unsupported => unsupported(ast),
     }
+}
+
+/// Anything but `null` going into an optional field is the value the option
+/// holds rather than the option itself, so the port wraps it.
+fn lower_value(
+    ast: &mut Ast,
+    tables: &Tables,
+    function: FunctionId,
+    declared: zag_facts::TypeId,
+    expression: ExpressionId,
+) -> NodeId {
+    let node = lower_expression(ast, tables, function, expression);
+    let kind = tables.expressions.kind.get(expression.0 as usize).copied();
+    if kind == Some(ExpressionKind::Null) {
+        return node;
+    }
+    if tables.types.kind.get(declared.0 as usize) != Some(&zag_facts::tables::TypeKind::Optional) {
+        return node;
+    }
+    let callee = push_string(&mut ast.strings, b"Some");
+    push_node(
+        ast,
+        NodeKind::ExpressionCall,
+        callee,
+        absent(),
+        0,
+        0,
+        &[node],
+    )
 }
 
 fn unsupported(ast: &mut Ast) -> NodeId {
@@ -223,7 +262,13 @@ pub fn lower_constructor(
     for row in struct_fields(&tables.structs, owner) {
         let field = FieldId(row as u32);
         let expression = assignment_for(tables, function, field)?;
-        let value = lower_expression(ast, tables, function, expression);
+        let declared = tables
+            .fields
+            .field_type
+            .get(row)
+            .copied()
+            .unwrap_or(zag_facts::TypeId(NO_INDEX));
+        let value = lower_value(ast, tables, function, declared, expression);
         let text = name_of(tables, tables.fields.name.get(row));
         let name = push_string(&mut ast.strings, &text);
         values.push(push_node(

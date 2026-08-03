@@ -30,6 +30,8 @@ pub enum TypeKind {
     Pointer = 4,
     Struct = 5,
     Opaque = 6,
+    Optional = 7,
+    Array = 8,
 }
 
 #[repr(u8)]
@@ -75,6 +77,8 @@ pub struct Strings {
 pub struct Types {
     pub kind: Vec<TypeKind>,
     pub element: Vec<TypeId>,
+    /// How many elements an array holds. Zero for everything else.
+    pub count: Vec<u32>,
     pub name: Vec<StringId>,
     pub size: Vec<u32>,
     pub alignment: Vec<u32>,
@@ -161,6 +165,7 @@ pub enum ExpressionKind {
     Allocation = 4,
     StructLiteral = 5,
     Unsupported = 6,
+    Null = 7,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
@@ -288,10 +293,26 @@ pub fn function_parameters(functions: &Functions, id: FunctionId) -> std::ops::R
     start..start.saturating_add(count as usize)
 }
 
+/// Whether the type is one that owns memory somewhere else. An optional is
+/// asked about whatever it wraps, so `?[]const u8` is a reference and `?u32`
+/// is not.
 pub fn is_reference_type(types: &Types, id: TypeId) -> bool {
-    let index = id.0 as usize;
-    if index >= types.kind.len() {
-        return false;
+    let mut current = id;
+    for _ in 0..8 {
+        let index = current.0 as usize;
+        let Some(kind) = types.kind.get(index) else {
+            return false;
+        };
+        match kind {
+            TypeKind::Slice | TypeKind::Pointer => return true,
+            TypeKind::Optional => {
+                let Some(element) = types.element.get(index).copied() else {
+                    return false;
+                };
+                current = element;
+            }
+            _ => return false,
+        }
     }
-    matches!(types.kind[index], TypeKind::Slice | TypeKind::Pointer)
+    false
 }

@@ -72,6 +72,31 @@ pub fn lower_type_body(
             )
         }
         TypeKind::Pointer => lower_type_body(ast, tables, lifetimes, element, depth + 1),
+        TypeKind::Optional => {
+            let inner = lower_type_body(ast, tables, lifetimes, element, depth + 1);
+            push_node(
+                ast,
+                NodeKind::TypeOption,
+                absent(),
+                absent(),
+                0,
+                0,
+                &[inner],
+            )
+        }
+        TypeKind::Array => {
+            let inner = lower_type_body(ast, tables, lifetimes, element, depth + 1);
+            let count = tables.types.count.get(index).copied().unwrap_or(0);
+            push_node(
+                ast,
+                NodeKind::TypeArray,
+                absent(),
+                absent(),
+                count,
+                0,
+                &[inner],
+            )
+        }
         TypeKind::Integer => {
             let signed = tables
                 .types
@@ -131,6 +156,27 @@ pub fn lower_field_type(
     kind: TypeId,
     class: OwnershipClass,
 ) -> NodeId {
+    // The ownership wrapper belongs inside the option, so a field that is
+    // owned and optional comes across as an optional box rather than a box of
+    // an option, which is a different type.
+    if tables.types.kind.get(kind.0 as usize) == Some(&TypeKind::Optional) {
+        let element = tables
+            .types
+            .element
+            .get(kind.0 as usize)
+            .copied()
+            .unwrap_or(TypeId(NO_INDEX));
+        let inner = lower_field_type(ast, tables, lifetimes, element, class);
+        return push_node(
+            ast,
+            NodeKind::TypeOption,
+            absent(),
+            absent(),
+            0,
+            0,
+            &[inner],
+        );
+    }
     let body = lower_type_body(ast, tables, lifetimes, kind, 0);
     match class {
         OwnershipClass::Value => body,

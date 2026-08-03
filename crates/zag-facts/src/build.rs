@@ -39,99 +39,128 @@ pub fn push_integer_type(tables: &mut Tables, bit_width: u32, signed: bool) -> T
     };
     push_type_row(
         tables,
-        TypeKind::Integer,
-        TypeId(crate::handles::NO_INDEX),
-        StringId(crate::handles::NO_INDEX),
-        bytes,
-        bytes,
-        bit_width,
-        flags,
+        TypeRow {
+            size: bytes,
+            alignment: bytes,
+            bit_width,
+            flags,
+            ..type_row(TypeKind::Integer)
+        },
     )
 }
 
 pub fn push_slice_type(tables: &mut Tables, element: TypeId) -> TypeId {
     push_type_row(
         tables,
-        TypeKind::Slice,
-        element,
-        StringId(crate::handles::NO_INDEX),
-        16,
-        8,
-        0,
-        0,
+        TypeRow {
+            element,
+            size: 16,
+            alignment: 8,
+            ..type_row(TypeKind::Slice)
+        },
     )
 }
 
 pub fn push_pointer_type(tables: &mut Tables, element: TypeId) -> TypeId {
     push_type_row(
         tables,
-        TypeKind::Pointer,
-        element,
-        StringId(crate::handles::NO_INDEX),
-        8,
-        8,
-        0,
-        0,
+        TypeRow {
+            element,
+            size: 8,
+            alignment: 8,
+            ..type_row(TypeKind::Pointer)
+        },
+    )
+}
+
+pub fn push_optional_type(tables: &mut Tables, element: TypeId) -> TypeId {
+    push_type_row(
+        tables,
+        TypeRow {
+            element,
+            size: 16,
+            alignment: 8,
+            ..type_row(TypeKind::Optional)
+        },
+    )
+}
+
+pub fn push_array_type(tables: &mut Tables, element: TypeId, count: u32, size: u32) -> TypeId {
+    push_type_row(
+        tables,
+        TypeRow {
+            element,
+            count,
+            size,
+            alignment: 8,
+            ..type_row(TypeKind::Array)
+        },
     )
 }
 
 pub fn push_void_type(tables: &mut Tables) -> TypeId {
-    push_type_row(
-        tables,
-        TypeKind::Void,
-        TypeId(crate::handles::NO_INDEX),
-        StringId(crate::handles::NO_INDEX),
-        0,
-        1,
-        0,
-        0,
-    )
+    push_type_row(tables, type_row(TypeKind::Void))
 }
 
 pub fn push_opaque_type(tables: &mut Tables, name: StringId) -> TypeId {
     push_type_row(
         tables,
-        TypeKind::Opaque,
-        TypeId(crate::handles::NO_INDEX),
-        name,
-        0,
-        1,
-        0,
-        0,
+        TypeRow {
+            name,
+            ..type_row(TypeKind::Opaque)
+        },
     )
 }
 
 pub fn push_struct_type(tables: &mut Tables, name: StringId, size: u32, alignment: u32) -> TypeId {
     push_type_row(
         tables,
-        TypeKind::Struct,
-        TypeId(crate::handles::NO_INDEX),
-        name,
-        size,
-        alignment,
-        0,
-        0,
+        TypeRow {
+            name,
+            size,
+            alignment,
+            ..type_row(TypeKind::Struct)
+        },
     )
 }
 
-fn push_type_row(
-    tables: &mut Tables,
+/// One row of the type table before it has a handle. The columns travel
+/// together because they are written together, so every helper below fills in
+/// the ones its kind uses and leaves the rest at the default.
+struct TypeRow {
     kind: TypeKind,
     element: TypeId,
     name: StringId,
+    count: u32,
     size: u32,
     alignment: u32,
     bit_width: u32,
     flags: u32,
-) -> TypeId {
+}
+
+fn type_row(kind: TypeKind) -> TypeRow {
+    TypeRow {
+        kind,
+        element: TypeId(crate::handles::NO_INDEX),
+        name: StringId(crate::handles::NO_INDEX),
+        count: 0,
+        size: 0,
+        alignment: 1,
+        bit_width: 0,
+        flags: 0,
+    }
+}
+
+fn push_type_row(tables: &mut Tables, row: TypeRow) -> TypeId {
     let types = &mut tables.types;
-    types.kind.push(kind);
-    types.element.push(element);
-    types.name.push(name);
-    types.size.push(size);
-    types.alignment.push(alignment);
-    types.bit_width.push(bit_width);
-    types.flags.push(flags);
+    types.kind.push(row.kind);
+    types.element.push(row.element);
+    types.count.push(row.count);
+    types.name.push(row.name);
+    types.size.push(row.size);
+    types.alignment.push(row.alignment);
+    types.bit_width.push(row.bit_width);
+    types.flags.push(row.flags);
     TypeId(types.kind.len() as u32 - 1)
 }
 

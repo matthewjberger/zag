@@ -2,10 +2,11 @@ pub mod program;
 
 use program::{Function, Layout, Program};
 use zag_facts::build::{
-    declare_field, declare_function, declare_parameter, intern, push_allocator_source, push_call,
-    push_call_argument, push_expression, push_field_assignment_with, push_integer_type,
-    push_memory_operation, push_opaque_type, push_pointer_type, push_slice_type, push_string,
-    push_struct, push_struct_type, set_struct_deinit, set_struct_kind,
+    declare_field, declare_function, declare_parameter, intern, push_allocator_source,
+    push_array_type, push_call, push_call_argument, push_expression, push_field_assignment_with,
+    push_integer_type, push_memory_operation, push_opaque_type, push_optional_type,
+    push_pointer_type, push_slice_type, push_string, push_struct, push_struct_type,
+    set_struct_deinit, set_struct_kind,
 };
 use zag_facts::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, NO_INDEX, StringId, StructId, TypeId,
@@ -71,10 +72,33 @@ fn scalar_type(tables: &mut Tables, text: &str) -> Option<TypeId> {
 
 fn resolve(tables: &mut Tables, resolver: &mut Resolver, text: &str) -> TypeId {
     let text = strip_error_union(text).trim();
-    let text = text.strip_prefix("?").unwrap_or(text);
+    if let Some(rest) = text.strip_prefix('?') {
+        let element = resolve(tables, resolver, rest);
+        return push_optional_type(tables, element);
+    }
     if let Some(rest) = text.strip_prefix("[]") {
         let element = resolve(tables, resolver, rest.trim_start_matches("const ").trim());
         return push_slice_type(tables, element);
+    }
+    // `[N]T` is a fixed array, and the count is the only part of it Rust needs
+    // that the element type does not already carry.
+    if let Some(rest) = text.strip_prefix('[')
+        && let Some((count, element)) = rest.split_once(']')
+        && let Ok(count) = count.trim().parse::<u32>()
+    {
+        let element = resolve(
+            tables,
+            resolver,
+            element.trim_start_matches("const ").trim(),
+        );
+        let size = tables
+            .types
+            .size
+            .get(element.0 as usize)
+            .copied()
+            .unwrap_or(0)
+            .saturating_mul(count);
+        return push_array_type(tables, element, count, size);
     }
     if let Some(rest) = text.strip_prefix('*') {
         let element = resolve(tables, resolver, rest.trim_start_matches("const ").trim());
@@ -109,6 +133,7 @@ fn push_named_type(
     let types = &mut tables.types;
     types.kind.push(kind);
     types.element.push(TypeId(NO_INDEX));
+    types.count.push(0);
     types.name.push(name);
     types.size.push(1);
     types.alignment.push(1);
@@ -162,7 +187,8 @@ fn allocating_call(text: &str) -> Option<&str> {
 }
 
 fn is_literal(text: &str) -> bool {
-    text.starts_with('"')
+    text == "null"
+        || text.starts_with('"')
         || text.starts_with("&.{")
         || text.starts_with(".{")
         || text.starts_with("0x")
@@ -505,6 +531,17 @@ fn translate(
         )
     };
 
+    if trimmed == "null" {
+        return push_expression(
+            tables,
+            ExpressionKind::Null,
+            StringId(NO_INDEX),
+            NO_INDEX,
+            result,
+            FieldId(NO_INDEX),
+            &[],
+        );
+    }
     if let Some(argument) = allocated_from(trimmed)
         && let Some(index) = parameter_index(function, argument)
     {

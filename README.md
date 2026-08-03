@@ -51,6 +51,10 @@ cd examples/wordcount && zig build run
 `wordcount` is owned memory whose free is a call away from `deinit`.
 `tokenizer` separates borrowed, arena, and static lifetimes inside one struct.
 `netpacket` is an `extern struct` whose layout the port has to preserve.
+`shapes` covers the containers that are not structs: an enum, a tagged union,
+and an error set.
+`telemetry` keeps a fixed array a fixed array and puts the ownership wrapper
+inside the option rather than around it.
 `conflict` hands one allocator parameter a heap from one caller and an arena
 from another, so it ports to nothing usable, which is the finding rather than a
 failure. [examples/README.md](examples/README.md) covers each in full.
