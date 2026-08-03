@@ -39,6 +39,12 @@ fixture output so its layout assertions run in the build.
 
 Dependencies point one way. `zag-facts` and `zag-render` are leaves.
 
+`examples/` holds Zig programs that build on their own, and
+`zag-facts/src/examples/` holds the tables each one would produce. They are the
+integration layer over unit tests that cover each pass alone, and they are kept
+in step by hand until the frontend lands. `zag-verify` compiles every port they
+produce, so the layout assertions run in the build.
+
 ## Working here
 
 The validator replaces encapsulation. Any new table invariant (a range that
@@ -57,5 +63,10 @@ both counting sorts into compressed sparse row, and new ones should follow that
 shape. The same rule is why the emitter uses `push_string` rather than
 `intern`, which is quadratic and exists only for building small tables by hand.
 
-Changing the emitter changes `fixtures/expected`. Run `just regenerate` and
-read the diff. That diff is the review.
+Changing the emitter changes `fixtures/expected` and every `expected` directory
+under `examples/`. Run `just regenerate` and read the diff. That diff is the
+review.
+
+A new example needs a directory that `zig build run` succeeds in, a module
+under `zag-facts/src/examples/`, a line in `examples.rs`, and a paragraph in
+`examples/README.md`. Tests fail while any of the four is missing.

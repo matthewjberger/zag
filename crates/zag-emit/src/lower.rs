@@ -38,7 +38,13 @@ fn rust_integer_width(bit_width: u32) -> Option<u32> {
         .find(|width| *width >= bit_width)
 }
 
-fn lower_type_body(ast: &mut Ast, tables: &Tables, kind: TypeId, depth: u32) -> NodeId {
+fn lower_type_body(
+    ast: &mut Ast,
+    tables: &Tables,
+    lifetimes: &[u32],
+    kind: TypeId,
+    depth: u32,
+) -> NodeId {
     let index = kind.0 as usize;
     let Some(&type_kind) = tables.types.kind.get(index) else {
         return unit_type(ast);
@@ -54,7 +60,7 @@ fn lower_type_body(ast: &mut Ast, tables: &Tables, kind: TypeId, depth: u32) -> 
         .unwrap_or(TypeId(NO_INDEX));
     match type_kind {
         TypeKind::Slice => {
-            let element = lower_type_body(ast, tables, element, depth + 1);
+            let element = lower_type_body(ast, tables, lifetimes, element, depth + 1);
             push_node(
                 ast,
                 NodeKind::TypeSliceBody,
@@ -65,7 +71,7 @@ fn lower_type_body(ast: &mut Ast, tables: &Tables, kind: TypeId, depth: u32) -> 
                 &[element],
             )
         }
-        TypeKind::Pointer => lower_type_body(ast, tables, element, depth + 1),
+        TypeKind::Pointer => lower_type_body(ast, tables, lifetimes, element, depth + 1),
         TypeKind::Integer => {
             let signed = tables
                 .types
@@ -93,13 +99,39 @@ fn lower_type_body(ast: &mut Ast, tables: &Tables, kind: TypeId, depth: u32) -> 
                 return unit_type(ast);
             }
             let name = push_string(&mut ast.strings, &text);
-            push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
+            let carried = lifetimes.get(index).copied().unwrap_or(0);
+            push_node(ast, NodeKind::TypePath, name, absent(), 0, carried, &[])
         }
     }
 }
 
-fn lower_field_type(ast: &mut Ast, tables: &Tables, kind: TypeId, class: OwnershipClass) -> NodeId {
-    let body = lower_type_body(ast, tables, kind, 0);
+/// A named struct has to be spelled with the lifetimes it declares, so the
+/// lifetimes of every struct are settled before any field that mentions one is
+/// lowered. Indexed by type rather than by struct, which is how a field names
+/// what it points at.
+fn lifetimes_by_type(tables: &Tables, ownership: &Ownership) -> Vec<u32> {
+    let mut carried = vec![0u32; tables.types.kind.len()];
+    for index in 0..struct_count(&tables.structs) {
+        let owner = StructId(index as u32);
+        let flags = struct_flags(tables, ownership, owner)
+            & (STRUCT_FLAG_BORROW_LIFETIME | STRUCT_FLAG_ARENA_LIFETIME);
+        if let Some(&kind) = tables.structs.type_id.get(index)
+            && let Some(slot) = carried.get_mut(kind.0 as usize)
+        {
+            *slot = flags;
+        }
+    }
+    carried
+}
+
+fn lower_field_type(
+    ast: &mut Ast,
+    tables: &Tables,
+    lifetimes: &[u32],
+    kind: TypeId,
+    class: OwnershipClass,
+) -> NodeId {
+    let body = lower_type_body(ast, tables, lifetimes, kind, 0);
     match class {
         OwnershipClass::Value => body,
         OwnershipClass::Owned => {
@@ -160,7 +192,13 @@ fn name_of(tables: &Tables, name: Option<&StringId>) -> Vec<u8> {
         .unwrap_or_default()
 }
 
-fn lower_struct(ast: &mut Ast, tables: &Tables, ownership: &Ownership, owner: StructId) -> NodeId {
+fn lower_struct(
+    ast: &mut Ast,
+    tables: &Tables,
+    ownership: &Ownership,
+    lifetimes: &[u32],
+    owner: StructId,
+) -> NodeId {
     let mut fields = Vec::new();
     for row in struct_fields(&tables.structs, owner) {
         let (Some(&field_type), Some(&class)) =
@@ -168,7 +206,7 @@ fn lower_struct(ast: &mut Ast, tables: &Tables, ownership: &Ownership, owner: St
         else {
             continue;
         };
-        let field_type = lower_field_type(ast, tables, field_type, class);
+        let field_type = lower_field_type(ast, tables, lifetimes, field_type, class);
         let text = name_of(tables, tables.fields.name.get(row));
         let name = push_string(&mut ast.strings, &text);
         fields.push(push_node(
@@ -243,10 +281,11 @@ fn lower_layout_assertions(
 
 pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
     let mut ast = empty_ast();
+    let lifetimes = lifetimes_by_type(tables, ownership);
     let mut items = Vec::new();
     for index in 0..struct_count(&tables.structs) {
         let owner = StructId(index as u32);
-        items.push(lower_struct(&mut ast, tables, ownership, owner));
+        items.push(lower_struct(&mut ast, tables, ownership, &lifetimes, owner));
         lower_layout_assertions(&mut ast, tables, owner, &mut items);
     }
     ast.root = push_node(&mut ast, NodeKind::File, absent(), absent(), 0, 0, &items);

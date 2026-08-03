@@ -1,0 +1,18 @@
+zag ownership report
+target: x86_64-linux
+fields: 3
+
+Counts.text
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (release)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Counts.words
+  class: value
+  confidence: high
+
+Counts.lines
+  class: value
+  confidence: high

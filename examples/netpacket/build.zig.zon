@@ -1,0 +1,12 @@
+.{
+    .name = .netpacket,
+    .version = "0.1.0",
+    .fingerprint = 0x7f0711a88dfa8c25,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

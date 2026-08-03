@@ -62,10 +62,29 @@ jobs:
       # The test suite already compares the library pipeline against
       # fixtures/expected. This runs the same thing through the binary, so the
       # command line path cannot drift away from the library path unnoticed.
-      - run: cargo run -q -p zag -- fixture --output target/example.facts
+      - uses: extractions/setup-just@v2
+      - run: just fixture
       - run: cargo run -q -p zag -- emit --facts target/example.facts --source fixtures/expected/example.rs --report fixtures/expected/example.report.txt
+      - run: just examples
       - name: The pipeline output matches what is checked in
-        run: git diff --exit-code fixtures/expected
+        run: git diff --exit-code fixtures/expected examples
+
+  examples:
+    name: Example programs build on their own
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      # Each example is a standalone project, so it is built from inside its
+      # own directory rather than through anything this repository provides.
+      - name: Build and run every example
+        run: |
+          for directory in examples/*/; do
+            echo "== $directory"
+            (cd "$directory" && zig build run)
+          done
 
   deny:
     name: cargo-deny

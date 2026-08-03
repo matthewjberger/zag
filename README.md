@@ -36,6 +36,11 @@ Run `just` with no arguments to list every recipe.
 [docs/PORTING.md](docs/PORTING.md) is how to read that report, and the rules
 for the parts zag does not decide, such as function bodies and comptime.
 
+[examples/](examples) holds small Zig programs that build and run on their own,
+one per analysis outcome. `cd examples/wordcount && zig build run` runs that
+one, and `just examples` ports all of them. Each carries the port it should
+produce, so the suite fails when the emitter changes what it writes.
+
 `fixtures/example.zig` is the Zig the worked example stands for. Nothing reads
 it. `zag-facts` hand-builds the tables that source would yield, and the rest of
 the pipeline is real. Every ownership class the analysis can reach appears in

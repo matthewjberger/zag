@@ -1,0 +1,30 @@
+zag ownership report
+target: x86_64-linux
+fields: 6
+
+Header.magic
+  class: value
+  confidence: high
+
+Header.version
+  class: value
+  confidence: high
+
+Header.flags
+  class: value
+  confidence: high
+
+Header.length
+  class: value
+  confidence: high
+
+Packet.header
+  class: value
+  confidence: high
+
+Packet.payload
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator

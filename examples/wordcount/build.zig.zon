@@ -1,0 +1,12 @@
+.{
+    .name = .wordcount,
+    .version = "0.1.0",
+    .fingerprint = 0xd0693794578f4baa,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

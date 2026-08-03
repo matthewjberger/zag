@@ -6,3 +6,7 @@
 
 *.tmp
 *.log
+
+# Zig build output inside the example projects.
+.zig-cache/
+zig-out/

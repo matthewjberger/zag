@@ -24,6 +24,19 @@ Nothing here is advice. Each rule is a decision procedure with one answer.
 5. Keep the layout assertions. A wrong layout then fails the build instead of
    the program.
 
+## Worked examples
+
+`examples/` holds Zig programs that build and run on their own, one per outcome
+this document describes. Each carries the port and the report it produces, so
+every rule below can be read against a case that actually runs.
+
+| example | what it shows |
+|---|---|
+| `wordcount` | `owned`, where the free is a call away from `deinit` |
+| `tokenizer` | `borrowed`, `arena`, and `static` separated inside one struct |
+| `netpacket` | an `extern struct` and the layout assertions its port carries |
+| `conflict` | an allocator two callers disagree about, which ports to nothing usable |
+
 ## Reading the report
 
 Every field carries a class, a confidence, and the evidence behind both.

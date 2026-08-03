@@ -1,0 +1,29 @@
+zag ownership report
+target: x86_64-linux
+fields: 5
+
+Token.text
+  class: arena
+  confidence: high
+  evidence: assigned from an allocation (parse)
+  evidence: allocator resolves to an arena
+
+Token.length
+  class: value
+  confidence: high
+
+Document.source
+  class: borrowed
+  confidence: medium
+  evidence: assigned from a parameter the caller retains (parse)
+
+Document.tokens
+  class: arena
+  confidence: high
+  evidence: assigned from an allocation (parse)
+  evidence: allocator resolves to an arena
+
+Document.separators
+  class: static
+  confidence: high
+  evidence: assigned from a static literal (parse)

@@ -130,6 +130,7 @@ fn render_type(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
     match kind_of(ast, node)? {
         NodeKind::TypePath => {
             out.extend_from_slice(text_of(ast, node));
+            render_lifetime_parameters(out, ast.flags[node.0 as usize]);
             Ok(())
         }
         NodeKind::TypeSliceBody => {

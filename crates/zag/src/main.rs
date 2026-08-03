@@ -10,8 +10,12 @@ struct Arguments {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Writes the worked example fact file that stands in for the Zig frontend
-    Fixture {
+    /// Lists the example programs that carry hand-built fact tables
+    Examples,
+    /// Writes an example's fact file, standing in for the Zig frontend
+    Facts {
+        #[arg(long)]
+        example: String,
         #[arg(long)]
         output: PathBuf,
     },
@@ -38,8 +42,19 @@ fn main() -> std::process::ExitCode {
 
 fn run(arguments: Arguments) -> Result<(), String> {
     match arguments.command {
-        Command::Fixture { output } => {
-            let tables = zag_facts::fixture::example_tables();
+        Command::Examples => {
+            for name in zag_facts::examples::NAMES {
+                println!("{name}");
+            }
+            Ok(())
+        }
+        Command::Facts { example, output } => {
+            let tables = zag_facts::examples::tables_for(&example).ok_or_else(|| {
+                format!(
+                    "unknown example {example:?}, try one of: {}",
+                    zag_facts::examples::NAMES.join(", ")
+                )
+            })?;
             write(&output, &zag_facts::wire::encode(&tables))
         }
         Command::Emit {

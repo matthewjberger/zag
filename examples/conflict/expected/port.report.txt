@@ -1,0 +1,9 @@
+zag ownership report
+target: x86_64-linux
+fields: 1
+
+Cache.entries
+  class: unknown
+  confidence: low
+  evidence: assigned from an allocation (makeCache)
+  evidence: allocator does not resolve to one allocator
