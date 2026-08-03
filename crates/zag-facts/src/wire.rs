@@ -99,6 +99,20 @@ fn type_kind_from_raw(value: u32) -> Result<TypeKind, DecodeError> {
     }
 }
 
+fn container_kind_from_raw(value: u32) -> Result<crate::tables::ContainerKind, DecodeError> {
+    use crate::tables::ContainerKind;
+    match value {
+        0 => Ok(ContainerKind::Struct),
+        1 => Ok(ContainerKind::Enum),
+        2 => Ok(ContainerKind::Union),
+        3 => Ok(ContainerKind::ErrorSet),
+        other => Err(DecodeError::UnknownEnumValue {
+            column: "structs.kind",
+            value: other,
+        }),
+    }
+}
+
 fn allocator_source_kind_from_raw(value: u32) -> Result<AllocatorSourceKind, DecodeError> {
     match value {
         0 => Ok(AllocatorSourceKind::Global),
@@ -169,6 +183,7 @@ fn encode_structs(out: &mut Vec<u8>, tables: &Tables) {
     write_u32_column(out, &structs.alignment);
     write_u32_column(out, &structs.flags);
     write_u32_column(out, &raw_from(&structs.deinit, |value| value.0));
+    write_u32_column(out, &raw_from(&structs.kind, |value| *value as u32));
 }
 
 fn encode_fields(out: &mut Vec<u8>, tables: &Tables) {
@@ -285,6 +300,7 @@ fn decode_structs(
         .into_iter()
         .map(FunctionId)
         .collect();
+    structs.kind = map_raw(read_u32_column(bytes, cursor)?, container_kind_from_raw)?;
     Ok(())
 }
 

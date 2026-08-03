@@ -87,6 +87,13 @@ asserts the same numbers at comptime, so a layout that moves fails on both
 sides rather than one. Its `payload` is owned and freed directly in `deinit`,
 which is the case the call graph does not have to work for.
 
+`shapes` covers the containers that are not structs. A Zig `enum` and a Zig
+`error` set both port to a Rust enum whose variants carry nothing, a
+`union(enum)` ports to one whose variants carry a payload, and a `void` payload
+carries nothing so the port carries nothing either. Variants come back in
+Pascal case, because a port that keeps the Zig spelling is a port the compiler
+complains about.
+
 `conflict` is the one that produces a finding rather than a port. `makeCache`
 takes an allocator, one caller hands it the heap and another hands it an arena,
 so the field has no single owner and the report says

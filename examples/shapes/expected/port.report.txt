@@ -1,0 +1,43 @@
+zag ownership report
+target: x86_64-linux
+fields: 10
+
+Colour.red
+  class: value
+  confidence: high
+
+Colour.green
+  class: value
+  confidence: high
+
+Colour.blue
+  class: value
+  confidence: high
+
+Extent.width
+  class: value
+  confidence: high
+
+Extent.height
+  class: value
+  confidence: high
+
+Shape.circle
+  class: value
+  confidence: high
+
+Shape.rectangle
+  class: value
+  confidence: high
+
+Shape.empty
+  class: value
+  confidence: high
+
+ParseError.Empty
+  class: value
+  confidence: high
+
+ParseError.TooLarge
+  class: value
+  confidence: high

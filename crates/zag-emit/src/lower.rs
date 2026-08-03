@@ -1,8 +1,8 @@
 use zag_analysis::ownership::{Ownership, OwnershipClass};
 use zag_facts::build::push_string;
 use zag_facts::tables::{
-    STRUCT_FLAG_EXTERN, TYPE_FLAG_SIGNED, Tables, TypeKind, string_bytes, struct_count,
-    struct_fields,
+    ContainerKind, STRUCT_FLAG_EXTERN, TYPE_FLAG_SIGNED, Tables, TypeKind, string_bytes,
+    struct_count, struct_fields,
 };
 use zag_facts::{NO_INDEX, StringId, StructId, TypeId};
 use zag_render::ast::{
@@ -192,6 +192,75 @@ fn name_of(tables: &Tables, name: Option<&StringId>) -> Vec<u8> {
         .unwrap_or_default()
 }
 
+/// A Zig enum has variants with no payload and a Zig union has variants that
+/// carry one. Both become a Rust enum, and the payload is a child of the
+/// variant when the member declared a type.
+fn lower_enum(
+    ast: &mut Ast,
+    tables: &Tables,
+    lifetimes: &[u32],
+    owner: StructId,
+    carries_payloads: bool,
+) -> NodeId {
+    let mut variants = Vec::new();
+    for row in struct_fields(&tables.structs, owner) {
+        let text = pascal_case(&name_of(tables, tables.fields.name.get(row)));
+        let name = push_string(&mut ast.strings, &text);
+        let mut payload = Vec::new();
+        if carries_payloads
+            && let Some(&kind) = tables.fields.field_type.get(row)
+            && !is_void(tables, kind)
+        {
+            payload.push(lower_type_body(ast, tables, lifetimes, kind, 0));
+        }
+        variants.push(push_node(
+            ast,
+            NodeKind::Variant,
+            name,
+            absent(),
+            0,
+            0,
+            &payload,
+        ));
+    }
+    let text = name_of(tables, tables.structs.name.get(owner.0 as usize));
+    let name = push_string(&mut ast.strings, &text);
+    let flags = if is_extern(tables, owner) {
+        STRUCT_FLAG_REPR_C
+    } else {
+        0
+    };
+    push_node(ast, NodeKind::Enum, name, absent(), 0, flags, &variants)
+}
+
+/// Zig spells a variant in snake case and Rust spells it in Pascal case, so a
+/// port that keeps the Zig spelling is a port the compiler complains about.
+fn pascal_case(name: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(name.len());
+    let mut capitalise = true;
+    for byte in name {
+        if *byte == b'_' {
+            capitalise = true;
+            continue;
+        }
+        out.push(if capitalise {
+            byte.to_ascii_uppercase()
+        } else {
+            *byte
+        });
+        capitalise = false;
+    }
+    out
+}
+
+fn is_void(tables: &Tables, kind: TypeId) -> bool {
+    tables
+        .types
+        .kind
+        .get(kind.0 as usize)
+        .is_some_and(|entry| *entry == TypeKind::Void)
+}
+
 fn lower_struct(
     ast: &mut Ast,
     tables: &Tables,
@@ -285,6 +354,17 @@ pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
     let mut items = Vec::new();
     for index in 0..struct_count(&tables.structs) {
         let owner = StructId(index as u32);
+        match tables.structs.kind.get(index).copied() {
+            Some(ContainerKind::Enum) | Some(ContainerKind::ErrorSet) => {
+                items.push(lower_enum(&mut ast, tables, &lifetimes, owner, false));
+                continue;
+            }
+            Some(ContainerKind::Union) => {
+                items.push(lower_enum(&mut ast, tables, &lifetimes, owner, true));
+                continue;
+            }
+            _ => {}
+        }
         items.push(lower_struct(&mut ast, tables, ownership, &lifetimes, owner));
         lower_layout_assertions(&mut ast, tables, owner, &mut items);
     }

@@ -75,6 +75,14 @@ fn isContainer(tag: Ast.Node.Tag) bool {
         .container_decl_two_trailing,
         .container_decl_arg,
         .container_decl_arg_trailing,
+        // A tagged union has its own tags rather than being a container with
+        // an argument, so leaving these out loses every union in the file.
+        .tagged_union,
+        .tagged_union_trailing,
+        .tagged_union_two,
+        .tagged_union_two_trailing,
+        .tagged_union_enum_tag,
+        .tagged_union_enum_tag_trailing,
         => true,
         else => false,
     };
@@ -166,6 +174,21 @@ pub fn main() !void {
             container.name,
             containerKeyword(tree, container.node),
         });
+    }
+
+    // An error set is not a container declaration, so its names are read off
+    // the tokens between its braces.
+    for (0..tree.nodes.len) |raw| {
+        const node: Ast.Node.Index = @enumFromInt(raw);
+        if (tree.nodeTag(node) != .error_set_decl) continue;
+        const name = containerName(tree, node) orelse continue;
+        std.debug.print("container {s} kind=error\n", .{name});
+        var walk = tree.firstToken(node);
+        const last = tree.lastToken(node);
+        while (walk <= last) : (walk += 1) {
+            if (tree.tokenTag(walk) != .identifier) continue;
+            std.debug.print("member {s}.{s} type=-\n", .{ name, tree.tokenSlice(walk) });
+        }
     }
 
     for (0..tree.nodes.len) |raw| {

@@ -19,6 +19,8 @@ pub enum NodeKind {
     AssertSize = 8,
     AssertAlignment = 9,
     AssertOffset = 10,
+    Enum = 11,
+    Variant = 12,
 }
 
 #[repr(u32)]

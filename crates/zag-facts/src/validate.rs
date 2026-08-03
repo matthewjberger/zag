@@ -147,6 +147,7 @@ fn check_struct_column_lengths(tables: &Tables, violations: &mut Vec<Violation>)
     );
     expect_length(violations, "structs", "flags", count, structs.flags.len());
     expect_length(violations, "structs", "deinit", count, structs.deinit.len());
+    expect_length(violations, "structs", "kind", count, structs.kind.len());
 }
 
 fn check_field_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) {

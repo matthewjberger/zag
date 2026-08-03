@@ -5,12 +5,12 @@ use zag_facts::build::{
     declare_field, declare_function, declare_parameter, intern, push_allocator_source, push_call,
     push_call_argument, push_field_assignment, push_integer_type, push_memory_operation,
     push_opaque_type, push_pointer_type, push_slice_type, push_string, push_struct,
-    push_struct_type, set_struct_deinit,
+    push_struct_type, set_struct_deinit, set_struct_kind,
 };
 use zag_facts::handles::{FieldId, FunctionId, MemoryOperationId, NO_INDEX, StructId, TypeId};
 use zag_facts::tables::{
-    AllocatorSourceKind, AssignmentSource, MemoryOperationKind, PARAMETER_FLAG_ALLOCATOR,
-    PlaceKind, STRUCT_FLAG_EXTERN, Tables, empty_tables,
+    AllocatorSourceKind, AssignmentSource, ContainerKind, MemoryOperationKind,
+    PARAMETER_FLAG_ALLOCATOR, PlaceKind, STRUCT_FLAG_EXTERN, Tables, empty_tables,
 };
 
 const ALLOCATING: [&str; 6] = [
@@ -123,6 +123,15 @@ fn layout_for<'a>(program: &'a Program, name: &str) -> Option<&'a Layout> {
         .map(|(_, layout)| layout)
 }
 
+fn container_kind(keyword: &str) -> ContainerKind {
+    match keyword {
+        "enum" => ContainerKind::Enum,
+        "union" => ContainerKind::Union,
+        "error" => ContainerKind::ErrorSet,
+        _ => ContainerKind::Struct,
+    }
+}
+
 fn is_allocator(declared: &str) -> bool {
     declared.contains("Allocator")
 }
@@ -204,6 +213,7 @@ fn declare_containers(
             layout.alignment.max(1),
             flags,
         );
+        set_struct_kind(tables, owner, container_kind(&container.kind));
         for member in &container.members {
             let member_type = resolve(tables, resolver, &member.declared);
             let offset = layout

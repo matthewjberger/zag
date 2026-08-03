@@ -6,6 +6,17 @@ pub const TYPE_FLAG_SIGNED: u32 = 1 << 0;
 
 pub const STRUCT_FLAG_EXTERN: u32 = 1 << 0;
 
+/// What a container is. A struct's members are fields, an enum's are variants
+/// with no payload, and a union's are variants that carry one.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContainerKind {
+    Struct = 0,
+    Enum = 1,
+    Union = 2,
+    ErrorSet = 3,
+}
+
 pub const PARAMETER_FLAG_ALLOCATOR: u32 = 1 << 0;
 
 #[repr(u8)]
@@ -80,6 +91,7 @@ pub struct Structs {
     pub alignment: Vec<u32>,
     pub flags: Vec<u32>,
     pub deinit: Vec<FunctionId>,
+    pub kind: Vec<ContainerKind>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]

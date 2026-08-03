@@ -16,6 +16,10 @@ pub mod netpacket {
     include!("../../../examples/netpacket/expected/port.rs");
 }
 
+pub mod shapes {
+    include!("../../../examples/shapes/expected/port.rs");
+}
+
 pub mod tokenizer {
     include!("../../../examples/tokenizer/expected/port.rs");
 }

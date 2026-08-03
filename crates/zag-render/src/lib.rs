@@ -75,6 +75,7 @@ fn only_child(ast: &Ast, node: NodeId) -> Result<NodeId, RenderError> {
 fn render_item(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
     match kind_of(ast, node)? {
         NodeKind::Struct => render_struct(out, ast, node),
+        NodeKind::Enum => render_enum(out, ast, node),
         NodeKind::AssertSize => render_assertion(out, ast, node, b"size_of"),
         NodeKind::AssertAlignment => render_assertion(out, ast, node, b"align_of"),
         NodeKind::AssertOffset => render_offset_assertion(out, ast, node),
@@ -101,6 +102,42 @@ fn render_struct(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), Rende
         out.extend_from_slice(text_of(ast, field));
         out.extend_from_slice(b": ");
         render_type(out, ast, only_child(ast, field)?)?;
+        out.extend_from_slice(b",\n");
+    }
+    out.extend_from_slice(b"}\n");
+    Ok(())
+}
+
+/// A Zig enum and a Zig tagged union are the same Rust shape. The difference
+/// is whether a variant carries a payload, which is a child node here.
+fn render_enum(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
+    let flags = ast.flags[node.0 as usize];
+    if flags & STRUCT_FLAG_REPR_C != 0 {
+        out.extend_from_slice(b"#[repr(C)]\n");
+    }
+    out.extend_from_slice(b"pub enum ");
+    out.extend_from_slice(text_of(ast, node));
+    render_lifetime_parameters(out, flags);
+    out.extend_from_slice(b" {\n");
+    for slot in node_children(ast, node) {
+        let variant = ast.children[slot];
+        match kind_of(ast, variant)? {
+            NodeKind::Variant => {}
+            found => {
+                return Err(RenderError::WrongKind {
+                    node: variant,
+                    found,
+                });
+            }
+        }
+        out.extend_from_slice(b"    ");
+        out.extend_from_slice(text_of(ast, variant));
+        let payload = node_children(ast, variant);
+        if !payload.is_empty() {
+            out.extend_from_slice(b"(");
+            render_type(out, ast, ast.children[payload.start])?;
+            out.extend_from_slice(b")");
+        }
         out.extend_from_slice(b",\n");
     }
     out.extend_from_slice(b"}\n");

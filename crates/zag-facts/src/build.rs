@@ -74,6 +74,19 @@ pub fn push_pointer_type(tables: &mut Tables, element: TypeId) -> TypeId {
     )
 }
 
+pub fn push_void_type(tables: &mut Tables) -> TypeId {
+    push_type_row(
+        tables,
+        TypeKind::Void,
+        TypeId(crate::handles::NO_INDEX),
+        StringId(crate::handles::NO_INDEX),
+        0,
+        1,
+        0,
+        0,
+    )
+}
+
 pub fn push_opaque_type(tables: &mut Tables, name: StringId) -> TypeId {
     push_type_row(
         tables,
@@ -189,7 +202,14 @@ pub fn push_struct(
     structs.alignment.push(alignment);
     structs.flags.push(flags);
     structs.deinit.push(FunctionId(crate::handles::NO_INDEX));
+    structs.kind.push(crate::tables::ContainerKind::Struct);
     StructId(structs.name.len() as u32 - 1)
+}
+
+pub fn set_struct_kind(tables: &mut Tables, owner: StructId, kind: crate::tables::ContainerKind) {
+    if let Some(slot) = tables.structs.kind.get_mut(owner.0 as usize) {
+        *slot = kind;
+    }
 }
 
 pub fn push_field(

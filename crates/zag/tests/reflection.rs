@@ -129,8 +129,14 @@ fn text_of(tables: &Tables, id: zag_facts::StringId) -> String {
     String::from_utf8_lossy(string_bytes(&tables.strings, id)).into_owned()
 }
 
+/// Reflection reports structs. An enum, a union, and an error set are reported
+/// by the parser instead, so they are compared there rather than here.
 fn declared_structs(tables: &Tables) -> BTreeMap<String, ReflectedStruct> {
     (0..struct_count(&tables.structs))
+        .filter(|index| {
+            tables.structs.kind.get(*index).copied()
+                == Some(zag_facts::tables::ContainerKind::Struct)
+        })
         .map(|index| {
             let owner = zag_facts::StructId(index as u32);
             let layout = if tables.structs.flags[index] & STRUCT_FLAG_EXTERN != 0 {
