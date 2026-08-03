@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "zag"
 description = "A whole-program Zig to Rust porting pipeline driven by facts extracted from the Zig compiler"
 version.workspace = true
@@ -14,6 +14,7 @@ clap.workspace = true
 zag-analysis.workspace = true
 zag-emit.workspace = true
 zag-facts.workspace = true
+zag-frontend.workspace = true
 zag-render.workspace = true
 
 [dev-dependencies]

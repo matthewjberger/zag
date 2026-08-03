@@ -12,12 +12,21 @@ struct Arguments {
 enum Command {
     /// Lists the example programs that carry hand-built fact tables
     Examples,
-    /// Writes an example's fact file, standing in for the Zig frontend
+    /// Writes an example's fact file from its hand-built tables
     Facts {
         #[arg(long)]
         example: String,
         #[arg(long)]
         output: PathBuf,
+    },
+    /// Reads a Zig file with the compiler and writes its fact file
+    Read {
+        #[arg(long)]
+        zig: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value = "x86_64-linux")]
+        target: String,
     },
     /// Reads a fact file and writes the ported Rust and its ownership report
     Emit {
@@ -55,6 +64,15 @@ fn run(arguments: Arguments) -> Result<(), String> {
                     zag_facts::examples::NAMES.join(", ")
                 )
             })?;
+            write(&output, &zag_facts::wire::encode(&tables))
+        }
+        Command::Read {
+            zig,
+            output,
+            target,
+        } => {
+            let program = zag::read_zig(&zig)?;
+            let tables = zag_frontend::build(&program, &target);
             write(&output, &zag_facts::wire::encode(&tables))
         }
         Command::Emit {

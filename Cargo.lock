@@ -461,6 +461,7 @@ dependencies = [
  "zag-analysis",
  "zag-emit",
  "zag-facts",
+ "zag-frontend",
  "zag-render",
 ]
 
@@ -486,6 +487,13 @@ name = "zag-facts"
 version = "0.1.0"
 dependencies = [
  "proptest",
+]
+
+[[package]]
+name = "zag-frontend"
+version = "0.1.0"
+dependencies = [
+ "zag-facts",
 ]
 
 [[package]]

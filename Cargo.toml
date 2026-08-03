@@ -1,4 +1,4 @@
-[workspace]
+﻿[workspace]
 members = ["crates/*"]
 resolver = "3"
 
@@ -15,6 +15,7 @@ rust-version = "1.85"
 zag-analysis = { version = "0.1.0", path = "crates/zag-analysis" }
 zag-emit = { version = "0.1.0", path = "crates/zag-emit" }
 zag-facts = { version = "0.1.0", path = "crates/zag-facts" }
+zag-frontend = { version = "0.1.0", path = "crates/zag-frontend" }
 zag-render = { version = "0.1.0", path = "crates/zag-render" }
 zag-repair = { version = "0.1.0", path = "crates/zag-repair" }
 clap = { version = "4", features = ["derive"] }
