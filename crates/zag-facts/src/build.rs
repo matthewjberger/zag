@@ -336,7 +336,37 @@ pub fn push_function(tables: &mut Tables, name: StringId, owner: StructId) -> Fu
     functions.error_set.push(StructId(crate::handles::NO_INDEX));
     functions.flags.push(0);
     functions.line.push(0);
+    functions.body.push(ExpressionId(crate::handles::NO_INDEX));
     FunctionId(functions.name.len() as u32 - 1)
+}
+
+/// The block the function body is. Only a frontend reading source has one.
+pub fn set_function_body(tables: &mut Tables, function: FunctionId, body: ExpressionId) {
+    if let Some(slot) = tables.functions.body.get_mut(function.0 as usize) {
+        *slot = body;
+    }
+}
+
+/// An expression with its text and children, for the shapes a body is made of
+/// rather than the ones a field initialiser is.
+pub fn push_body_expression(
+    tables: &mut Tables,
+    kind: ExpressionKind,
+    text: StringId,
+    line: u32,
+    children: &[ExpressionId],
+) -> ExpressionId {
+    let expression = push_expression(
+        tables,
+        kind,
+        text,
+        crate::handles::NO_INDEX,
+        TypeId(crate::handles::NO_INDEX),
+        FieldId(crate::handles::NO_INDEX),
+        children,
+    );
+    set_expression_line(tables, expression, line);
+    expression
 }
 
 /// Where the Zig declares it. Set separately from the rest of the signature

@@ -112,7 +112,8 @@ allocated in `store.zig`, and that same field is freed in `close.zig`. No file
 on its own says who owns the label, and reading them together is what makes it
 `Box<[u8]>`. Each file becomes a Rust module, because a Zig file is a struct
 and that is the same shape, and a type named across a module boundary is
-spelled with the path to the module that declares it.
+spelled with the path to the module that declares it. `store.total` is also the
+example of a body that comes across whole rather than as a `todo!()`.
 
 `conflict` is the one that produces a finding rather than a port. `makeCache`
 takes an allocator, one caller hands it the heap and another hands it an arena,

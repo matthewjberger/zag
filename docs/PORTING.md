@@ -117,6 +117,7 @@ The report ends with what became of every function.
 | outcome | what to do |
 |---|---|
 | `ported, as the constructor` | nothing, the body is written |
+| `ported, signature and body` | read it, then nothing. The whole function came across |
 | `disappears, Drop frees what it freed` | delete the Zig `deinit`, `Box` already does its job |
 | `ported, signature only, the body is still to write` | fill in the `todo!()`, the signature around it is settled |
 | `still to write, what it returns did not resolve` | find the type the frontend could not read, usually a generic or a comptime result |
@@ -250,6 +251,22 @@ Provenance resolves each allocator parameter to one of four values.
 An arena field freed individually is contradictory, so zag drops its confidence
 to `medium` and says so. Arena memory is released by resetting the arena, so
 either the Zig has a bug or the allocator was misidentified.
+
+## Bodies the port reads
+
+A function whose body is made of shapes the port can spell comes across whole,
+and the report says `ported, signature and body`. Those shapes are names,
+literals, field access, indexing, the arithmetic and comparison operators,
+`and` and `or`, grouping, `try`, `if` with or without an else, local
+declarations, assignment, and `return`.
+
+A Zig `return` at the end of a body is a Rust trailing expression, because that
+is what Rust writes and what its linter asks for.
+
+Everything else, a `switch`, a loop, a builtin, a call the tables do not know
+the callee of, stops the whole body. The function still comes across as a
+signature with `todo!()` in it, because a body with one hole in it looks
+finished and is not. The report says which shape stopped it and where.
 
 ## Bodies the port writes for you
 

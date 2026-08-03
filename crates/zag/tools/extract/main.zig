@@ -118,6 +118,257 @@ fn isStructInit(tag: Ast.Node.Tag) bool {
     };
 }
 
+/// The Rust spelling of a binary operator, or nothing where Rust has no
+/// operator that means the same thing. Zig's `and` and `or` are Rust's `&&`
+/// and `||`, and the arithmetic ones carry across unchanged.
+fn binaryOperator(tag: Ast.Node.Tag) ?[]const u8 {
+    return switch (tag) {
+        .add => "+",
+        .sub => "-",
+        .mul => "*",
+        .div => "/",
+        .mod => "%",
+        .bit_and => "&",
+        .bit_or => "|",
+        .bit_xor => "^",
+        .shl => "<<",
+        .shr => ">>",
+        .equal_equal => "==",
+        .bang_equal => "!=",
+        .less_than => "<",
+        .greater_than => ">",
+        .less_or_equal => "<=",
+        .greater_or_equal => ">=",
+        .bool_and => "&&",
+        .bool_or => "||",
+        else => null,
+    };
+}
+
+fn unaryOperator(tag: Ast.Node.Tag) ?[]const u8 {
+    return switch (tag) {
+        .bool_not => "!",
+        .negation => "-",
+        else => null,
+    };
+}
+
+const Walker = struct {
+    tree: Ast,
+    arena: std.mem.Allocator,
+    owner: []const u8,
+};
+
+fn lineOf(tree: Ast, node: Ast.Node.Index) usize {
+    return tree.tokenLocation(0, tree.firstToken(node)).line + 1;
+}
+
+/// Prints one expression and everything under it, children first, so a reader
+/// building a tree from these lines always has a child before its parent.
+/// Nodes are named by their index in the syntax tree, which is unique per file
+/// and needs no numbering of its own.
+///
+/// Anything with no shape here is reported as unsupported with the Zig it
+/// stands for, which is what keeps a body from being half ported.
+fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
+    const tree = walker.tree;
+    const tag = tree.nodeTag(node);
+    const raw = @intFromEnum(node);
+    const line = lineOf(tree, node);
+
+    if (binaryOperator(tag)) |operator| {
+        const sides = tree.nodeData(node).node_and_node;
+        try emitExpression(walker, sides[0]);
+        try emitExpression(walker, sides[1]);
+        std.debug.print("expression {s} {d} kind=binary line={d} left={d} right={d} operator={s}\n", .{
+            walker.owner, raw, line, @intFromEnum(sides[0]), @intFromEnum(sides[1]), operator,
+        });
+        return;
+    }
+    if (unaryOperator(tag)) |operator| {
+        const inner = tree.nodeData(node).node;
+        try emitExpression(walker, inner);
+        std.debug.print("expression {s} {d} kind=unary line={d} left={d} operator={s}\n", .{
+            walker.owner, raw, line, @intFromEnum(inner), operator,
+        });
+        return;
+    }
+
+    switch (tag) {
+        .identifier => {
+            std.debug.print("expression {s} {d} kind=identifier line={d} text={s}\n", .{
+                walker.owner, raw, line, tree.tokenSlice(tree.nodeMainToken(node)),
+            });
+            return;
+        },
+        .number_literal, .string_literal, .char_literal => {
+            std.debug.print("expression {s} {d} kind=literal line={d} text={s}\n", .{
+                walker.owner, raw, line, try collapse(walker.arena, tree.getNodeSource(node)),
+            });
+            return;
+        },
+        .field_access => {
+            const base, const name = tree.nodeData(node).node_and_token;
+            try emitExpression(walker, base);
+            std.debug.print("expression {s} {d} kind=field line={d} left={d} text={s}\n", .{
+                walker.owner, raw, line, @intFromEnum(base), tree.tokenSlice(name),
+            });
+            return;
+        },
+        .array_access => {
+            const sides = tree.nodeData(node).node_and_node;
+            try emitExpression(walker, sides[0]);
+            try emitExpression(walker, sides[1]);
+            std.debug.print("expression {s} {d} kind=index line={d} left={d} right={d}\n", .{
+                walker.owner, raw, line, @intFromEnum(sides[0]), @intFromEnum(sides[1]),
+            });
+            return;
+        },
+        .grouped_expression => {
+            const inner = tree.nodeData(node).node_and_token[0];
+            try emitExpression(walker, inner);
+            std.debug.print("expression {s} {d} kind=group line={d} left={d}\n", .{
+                walker.owner, raw, line, @intFromEnum(inner),
+            });
+            return;
+        },
+        .@"try" => {
+            const inner = tree.nodeData(node).node;
+            try emitExpression(walker, inner);
+            std.debug.print("expression {s} {d} kind=try line={d} left={d}\n", .{
+                walker.owner, raw, line, @intFromEnum(inner),
+            });
+            return;
+        },
+        else => {},
+    }
+
+    var call_buffer: [1]Ast.Node.Index = undefined;
+    if (tree.fullCall(&call_buffer, node)) |call| {
+        for (call.ast.params) |parameter| try emitExpression(walker, parameter);
+        // The callee goes last, because it is Zig that may contain a space and
+        // the reader takes the rest of the line for it.
+        std.debug.print("expression {s} {d} kind=call line={d} arguments={d} text={s}\n", .{
+            walker.owner,
+            raw,
+            line,
+            call.ast.params.len,
+            try collapse(walker.arena, tree.getNodeSource(call.ast.fn_expr)),
+        });
+        for (call.ast.params, 0..) |parameter, index| {
+            std.debug.print("operand {s} {d} {d} node={d}\n", .{
+                walker.owner, raw, index, @intFromEnum(parameter),
+            });
+        }
+        return;
+    }
+
+    if (tree.fullIf(node)) |branch| {
+        // A Zig `if` is an expression and so is a Rust one, so the shape
+        // carries across whether it was written as a value or as a statement.
+        try emitExpression(walker, branch.ast.cond_expr);
+        try emitExpression(walker, branch.ast.then_expr);
+        const otherwise = branch.ast.else_expr.unwrap();
+        if (otherwise) |expression| try emitExpression(walker, expression);
+        std.debug.print("expression {s} {d} kind=if line={d} left={d} right={d} otherwise={s}\n", .{
+            walker.owner,
+            raw,
+            line,
+            @intFromEnum(branch.ast.cond_expr),
+            @intFromEnum(branch.ast.then_expr),
+            if (otherwise) |expression|
+                try std.fmt.allocPrint(walker.arena, "{d}", .{@intFromEnum(expression)})
+            else
+                "-",
+        });
+        return;
+    }
+
+    var block_buffer: [2]Ast.Node.Index = undefined;
+    if (tree.blockStatements(&block_buffer, node)) |statements| {
+        for (statements) |statement| try emitStatement(walker, statement);
+        std.debug.print("expression {s} {d} kind=block line={d} statements={d}\n", .{
+            walker.owner, raw, line, statements.len,
+        });
+        for (statements, 0..) |statement, index| {
+            std.debug.print("operand {s} {d} {d} node={d}\n", .{
+                walker.owner, raw, index, @intFromEnum(statement),
+            });
+        }
+        return;
+    }
+
+    std.debug.print("expression {s} {d} kind=unsupported line={d} text={s}\n", .{
+        walker.owner, raw, line, try collapse(walker.arena, tree.getNodeSource(node)),
+    });
+}
+
+/// One statement of a body. A statement is an expression here where Zig makes
+/// no distinction, which keeps the reader on the other side from needing two
+/// vocabularies for the same thing.
+fn emitStatement(walker: Walker, node: Ast.Node.Index) anyerror!void {
+    const tree = walker.tree;
+    const raw = @intFromEnum(node);
+    const line = lineOf(tree, node);
+
+    if (tree.nodeTag(node) == .@"return") {
+        const returned = tree.nodeData(node).opt_node.unwrap();
+        if (returned) |expression| {
+            try emitExpression(walker, expression);
+            std.debug.print("statement {s} {d} kind=return line={d} left={d}\n", .{
+                walker.owner, raw, line, @intFromEnum(expression),
+            });
+        } else {
+            std.debug.print("statement {s} {d} kind=return line={d} left=-\n", .{
+                walker.owner, raw, line,
+            });
+        }
+        return;
+    }
+
+    if (tree.fullVarDecl(node)) |declaration| {
+        const initialiser = declaration.ast.init_node.unwrap();
+        if (initialiser) |expression| {
+            try emitExpression(walker, expression);
+            std.debug.print("statement {s} {d} kind=let line={d} left={d} text={s}\n", .{
+                walker.owner,
+                raw,
+                line,
+                @intFromEnum(expression),
+                tree.tokenSlice(declaration.ast.mut_token + 1),
+            });
+            return;
+        }
+    }
+
+    if (tree.nodeTag(node) == .assign) {
+        const sides = tree.nodeData(node).node_and_node;
+        try emitExpression(walker, sides[0]);
+        try emitExpression(walker, sides[1]);
+        std.debug.print("statement {s} {d} kind=assign line={d} left={d} right={d}\n", .{
+            walker.owner, raw, line, @intFromEnum(sides[0]), @intFromEnum(sides[1]),
+        });
+        return;
+    }
+
+    try emitExpression(walker, node);
+    std.debug.print("statement {s} {d} kind=expression line={d} left={d}\n", .{
+        walker.owner, raw, line, raw,
+    });
+}
+
+fn emitBody(walker: Walker, body: Ast.Node.Index) !void {
+    var block_buffer: [2]Ast.Node.Index = undefined;
+    const statements = walker.tree.blockStatements(&block_buffer, body) orelse return;
+    for (statements) |statement| try emitStatement(walker, statement);
+    std.debug.print("body {s} statements={d}\n", .{ walker.owner, statements.len });
+    for (statements, 0..) |statement, index| {
+        std.debug.print("step {s} {d} node={d}\n", .{
+            walker.owner, index, @intFromEnum(statement),
+        });
+    }
+}
+
 pub fn main() !void {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
@@ -243,6 +494,10 @@ pub fn main() !void {
                 kind,
             });
         }
+        try emitBody(
+            .{ .tree = tree, .arena = arena, .owner = function.name },
+            tree.nodeData(function.node).node_and_node[1],
+        );
     }
 
     var call_buffer: [1]Ast.Node.Index = undefined;

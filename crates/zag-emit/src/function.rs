@@ -303,28 +303,32 @@ pub fn lower_signature(
         count += 1;
     }
     children.push(lower_return_type(ast, tables, lowering, function));
-    // An unwritten body uses none of what it was handed, so the port discards
-    // each argument the way a person writing the same stub would. Each line
-    // goes away as soon as the body starts using its argument.
-    for slot in 0..count as usize {
-        let parameter = children[slot];
-        if ast.flags[parameter.0 as usize] & PARAMETER_FLAG_RECEIVER != 0 {
-            continue;
+    if let Some(statements) = crate::body::lower_body(ast, tables, function) {
+        children.extend(statements);
+    } else {
+        // An unwritten body uses none of what it was handed, so the port
+        // discards each argument the way a person writing the same stub would.
+        // Each line goes away as soon as the body starts using its argument.
+        for slot in 0..count as usize {
+            let parameter = children[slot];
+            if ast.flags[parameter.0 as usize] & PARAMETER_FLAG_RECEIVER != 0 {
+                continue;
+            }
+            let text = string_bytes(&ast.strings, ast.text[parameter.0 as usize]).to_vec();
+            let name = push_string(&mut ast.strings, &text);
+            children.push(push_node(ast, NodeKind::Discard, name, absent(), 0, 0, &[]));
         }
-        let text = string_bytes(&ast.strings, ast.text[parameter.0 as usize]).to_vec();
-        let name = push_string(&mut ast.strings, &text);
-        children.push(push_node(ast, NodeKind::Discard, name, absent(), 0, 0, &[]));
+        let body = push_string(&mut ast.strings, b"todo!()");
+        children.push(push_node(
+            ast,
+            NodeKind::ExpressionLiteral,
+            body,
+            absent(),
+            0,
+            0,
+            &[],
+        ));
     }
-    let body = push_string(&mut ast.strings, b"todo!()");
-    children.push(push_node(
-        ast,
-        NodeKind::ExpressionLiteral,
-        body,
-        absent(),
-        0,
-        0,
-        &[],
-    ));
     let text = snake_case(&name_of(
         tables,
         tables.functions.name.get(function.0 as usize),
@@ -379,9 +383,10 @@ pub fn signatures_for(
         if owner_of(tables, function) != owner {
             continue;
         }
-        if crate::report::disposition(tables, ownership, lowering, function)
-            != crate::report::Disposition::Signature
-        {
+        if !matches!(
+            crate::report::disposition(tables, ownership, lowering, function),
+            crate::report::Disposition::Signature | crate::report::Disposition::Ported
+        ) {
             continue;
         }
         if let Some(node) = lower_signature(ast, tables, ownership, lowering, function) {

@@ -252,6 +252,7 @@ fn check_function_column_lengths(tables: &Tables, violations: &mut Vec<Violation
         functions.flags.len(),
     );
     expect_length(violations, "functions", "line", count, functions.line.len());
+    expect_length(violations, "functions", "body", count, functions.body.len());
 
     let parameters = &tables.parameters;
     let count = parameter_count(parameters);

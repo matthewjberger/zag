@@ -5,12 +5,12 @@ use program::{Function, Layout, Program};
 use std::collections::BTreeMap;
 use zag_facts::build::{
     declare_field, declare_function, declare_module, declare_parameter, intern, name_root_module,
-    push_allocator_source, push_array_type, push_call, push_call_argument, push_expression,
-    push_field_assignment_at, push_integer_type, push_memory_operation, push_opaque_type,
-    push_optional_type, push_pointer_type, push_slice_type, push_string, push_struct,
-    push_struct_type, push_unresolved_import, set_expression_line, set_function_line,
-    set_function_module, set_function_signature, set_struct_deinit, set_struct_kind,
-    set_struct_module, set_type_module,
+    push_allocator_source, push_array_type, push_body_expression, push_call, push_call_argument,
+    push_expression, push_field_assignment_at, push_integer_type, push_memory_operation,
+    push_opaque_type, push_optional_type, push_pointer_type, push_slice_type, push_string,
+    push_struct, push_struct_type, push_unresolved_import, set_expression_line, set_function_body,
+    set_function_line, set_function_module, set_function_signature, set_struct_deinit,
+    set_struct_kind, set_struct_module, set_type_module,
 };
 use zag_facts::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId, NO_INDEX, StringId, StructId,
@@ -549,6 +549,14 @@ pub fn build_project(modules: &[project::SourceModule], target: &str) -> Tables 
             &sources,
         );
     }
+    for (module, scope) in modules.iter().zip(scopes.iter()) {
+        for function in &module.program.functions {
+            let Some(handle) = look_up(&built.functions, scope, &function.name) else {
+                continue;
+            };
+            declare_body(&mut tables, function, handle);
+        }
+    }
     tables
 }
 
@@ -976,6 +984,192 @@ fn translate(
         );
     }
     unsupported(tables)
+}
+
+/// Turns the flat node list the parser hands over into the expression tree the
+/// tables hold. Children arrive before parents, so one pass in order is enough
+/// and a node always finds what it refers to already built.
+///
+/// A shape with no expression kind of its own becomes `Unsupported` carrying
+/// the Zig it stands for. That is what stops a body being half ported: one
+/// unsupported node anywhere and the emitter writes none of it.
+fn declare_body(tables: &mut Tables, function: &Function, handle: FunctionId) {
+    if function.body.is_empty() {
+        return;
+    }
+    let mut built: Vec<(u32, ExpressionId)> = Vec::new();
+    for node in &function.nodes {
+        let expression = translate_node(tables, node, &built);
+        built.push((node.node, expression));
+    }
+    let statements: Vec<ExpressionId> = function
+        .body
+        .iter()
+        .filter_map(|node| built.iter().find(|(at, _)| at == node).map(|(_, id)| *id))
+        .collect();
+    if statements.len() != function.body.len() {
+        return;
+    }
+    let block = push_body_expression(
+        tables,
+        ExpressionKind::Block,
+        StringId(NO_INDEX),
+        function.line,
+        &statements,
+    );
+    set_function_body(tables, handle, block);
+}
+
+fn built_child(built: &[(u32, ExpressionId)], node: Option<u32>) -> Option<ExpressionId> {
+    let node = node?;
+    built.iter().find(|(at, _)| *at == node).map(|(_, id)| *id)
+}
+
+fn translate_node(
+    tables: &mut Tables,
+    node: &program::Node,
+    built: &[(u32, ExpressionId)],
+) -> ExpressionId {
+    let left = built_child(built, node.left);
+    let right = built_child(built, node.right);
+    let otherwise = built_child(built, node.otherwise);
+    let operands: Vec<ExpressionId> = node
+        .operands
+        .iter()
+        .filter_map(|operand| built_child(built, Some(*operand)))
+        .collect();
+    let complete = operands.len() == node.operands.len();
+
+    let spelled = |tables: &mut Tables| push_string(&mut tables.strings, node.text.as_bytes());
+    let unsupported = |tables: &mut Tables| {
+        let text = push_string(&mut tables.strings, node.text.as_bytes());
+        push_body_expression(tables, ExpressionKind::Unsupported, text, node.line, &[])
+    };
+
+    match node.kind.as_str() {
+        "identifier" => {
+            let text = spelled(tables);
+            push_body_expression(tables, ExpressionKind::Identifier, text, node.line, &[])
+        }
+        "literal" => {
+            let text = spelled(tables);
+            push_body_expression(tables, ExpressionKind::Literal, text, node.line, &[])
+        }
+        "field" => match left {
+            Some(left) => {
+                let text = spelled(tables);
+                push_body_expression(tables, ExpressionKind::Field, text, node.line, &[left])
+            }
+            None => unsupported(tables),
+        },
+        "binary" => match (left, right) {
+            (Some(left), Some(right)) => {
+                let text = spelled(tables);
+                push_body_expression(
+                    tables,
+                    ExpressionKind::Binary,
+                    text,
+                    node.line,
+                    &[left, right],
+                )
+            }
+            _ => unsupported(tables),
+        },
+        "unary" => match left {
+            Some(left) => {
+                let text = spelled(tables);
+                push_body_expression(tables, ExpressionKind::Unary, text, node.line, &[left])
+            }
+            None => unsupported(tables),
+        },
+        "index" => match (left, right) {
+            (Some(left), Some(right)) => push_body_expression(
+                tables,
+                ExpressionKind::Index,
+                StringId(NO_INDEX),
+                node.line,
+                &[left, right],
+            ),
+            _ => unsupported(tables),
+        },
+        "group" => match left {
+            Some(left) => push_body_expression(
+                tables,
+                ExpressionKind::Group,
+                StringId(NO_INDEX),
+                node.line,
+                &[left],
+            ),
+            None => unsupported(tables),
+        },
+        "try" => match left {
+            Some(left) => push_body_expression(
+                tables,
+                ExpressionKind::Question,
+                StringId(NO_INDEX),
+                node.line,
+                &[left],
+            ),
+            None => unsupported(tables),
+        },
+        "call" if complete => {
+            let text = spelled(tables);
+            push_body_expression(tables, ExpressionKind::Call, text, node.line, &operands)
+        }
+        "if" => match (left, right) {
+            (Some(condition), Some(then)) => {
+                let mut children = vec![condition, then];
+                children.extend(otherwise);
+                push_body_expression(
+                    tables,
+                    ExpressionKind::Branch,
+                    StringId(NO_INDEX),
+                    node.line,
+                    &children,
+                )
+            }
+            _ => unsupported(tables),
+        },
+        "block" if complete => push_body_expression(
+            tables,
+            ExpressionKind::Block,
+            StringId(NO_INDEX),
+            node.line,
+            &operands,
+        ),
+        "return" => {
+            let children: Vec<ExpressionId> = left.into_iter().collect();
+            push_body_expression(
+                tables,
+                ExpressionKind::Return,
+                StringId(NO_INDEX),
+                node.line,
+                &children,
+            )
+        }
+        "let" => match left {
+            Some(left) => {
+                let text = spelled(tables);
+                push_body_expression(tables, ExpressionKind::Let, text, node.line, &[left])
+            }
+            None => unsupported(tables),
+        },
+        "assign" => match (left, right) {
+            (Some(left), Some(right)) => push_body_expression(
+                tables,
+                ExpressionKind::Assign,
+                StringId(NO_INDEX),
+                node.line,
+                &[left, right],
+            ),
+            _ => unsupported(tables),
+        },
+        "expression" => match left {
+            Some(left) => left,
+            None => unsupported(tables),
+        },
+        _ => unsupported(tables),
+    }
 }
 
 fn parameter_index(function: &Function, name: &str) -> Option<u32> {

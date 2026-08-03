@@ -7,8 +7,6 @@ pub mod entry {
 
 pub mod store {
     pub fn total(first: &super::entry::Entry, second: &super::entry::Entry) -> u32 {
-        let _ = first;
-        let _ = second;
-        todo!()
+        first.amount + second.amount
     }
 }

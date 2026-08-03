@@ -1,3 +1,4 @@
+pub mod body;
 pub mod constructor;
 pub mod function;
 pub mod index;

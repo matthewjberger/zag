@@ -1,15 +1,43 @@
 use crate::build::{
     declare_field, declare_function, declare_module, declare_parameter, declare_struct, intern,
-    name_root_module, push_allocator_source, push_call, push_call_argument, push_expression,
-    push_field_assignment_at, push_integer_type, push_memory_operation, push_opaque_type,
-    push_pointer_type, push_slice_type, push_void_type, set_expression_line, set_function_line,
-    set_function_module, set_function_signature, set_struct_module, struct_type,
+    name_root_module, push_allocator_source, push_body_expression, push_call, push_call_argument,
+    push_expression, push_field_assignment_at, push_integer_type, push_memory_operation,
+    push_opaque_type, push_pointer_type, push_slice_type, push_string, push_void_type,
+    set_expression_line, set_function_body, set_function_line, set_function_module,
+    set_function_signature, set_struct_module, struct_type,
 };
-use crate::handles::{FieldId, FunctionId, NO_INDEX, StringId, StructId};
+use crate::handles::{ExpressionId, FieldId, FunctionId, NO_INDEX, StringId, StructId};
 use crate::tables::{
     AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind,
     PARAMETER_FLAG_ALLOCATOR, PARAMETER_FLAG_MUTABLE, PlaceKind, ROOT_MODULE, Tables, empty_tables,
 };
+
+fn sum_of_amounts(tables: &mut Tables) -> ExpressionId {
+    let side = |tables: &mut Tables, name: &[u8]| {
+        let spelled = push_string(&mut tables.strings, name);
+        let base = push_body_expression(tables, ExpressionKind::Identifier, spelled, 14, &[]);
+        let field = push_string(&mut tables.strings, b"amount");
+        push_body_expression(tables, ExpressionKind::Field, field, 14, &[base])
+    };
+    let first = side(tables, b"first");
+    let second = side(tables, b"second");
+    let plus = push_string(&mut tables.strings, b"+");
+    let sum = push_body_expression(tables, ExpressionKind::Binary, plus, 14, &[first, second]);
+    let returned = push_body_expression(
+        tables,
+        ExpressionKind::Return,
+        StringId(NO_INDEX),
+        14,
+        &[sum],
+    );
+    push_body_expression(
+        tables,
+        ExpressionKind::Block,
+        StringId(NO_INDEX),
+        13,
+        &[returned],
+    )
+}
 
 pub fn tables() -> Tables {
     let mut tables = empty_tables();
@@ -78,6 +106,11 @@ pub fn tables() -> Tables {
     for (function, line) in [(main, 5), (close, 4), (open, 4), (total, 13)] {
         set_function_line(&mut tables, function, line);
     }
+
+    // `return first.amount + second.amount;`, which is the body the port
+    // writes rather than leaving a `todo!()`.
+    let body = sum_of_amounts(&mut tables);
+    set_function_body(&mut tables, total, body);
 
     let page = push_allocator_source(
         &mut tables,

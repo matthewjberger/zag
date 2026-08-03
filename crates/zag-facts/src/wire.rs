@@ -163,6 +163,19 @@ fn expression_kind_from_raw(value: u32) -> Result<crate::tables::ExpressionKind,
         5 => Ok(ExpressionKind::StructLiteral),
         6 => Ok(ExpressionKind::Unsupported),
         7 => Ok(ExpressionKind::Null),
+        8 => Ok(ExpressionKind::Identifier),
+        9 => Ok(ExpressionKind::Field),
+        10 => Ok(ExpressionKind::Binary),
+        11 => Ok(ExpressionKind::Unary),
+        12 => Ok(ExpressionKind::Index),
+        13 => Ok(ExpressionKind::Call),
+        14 => Ok(ExpressionKind::Branch),
+        15 => Ok(ExpressionKind::Block),
+        16 => Ok(ExpressionKind::Return),
+        17 => Ok(ExpressionKind::Let),
+        18 => Ok(ExpressionKind::Assign),
+        19 => Ok(ExpressionKind::Group),
+        20 => Ok(ExpressionKind::Question),
         other => Err(DecodeError::UnknownEnumValue {
             column: "expressions.kind",
             value: other,
@@ -241,6 +254,7 @@ fn encode_functions(out: &mut Vec<u8>, tables: &Tables) {
     write_u32_column(out, &raw_from(&functions.error_set, |value| value.0));
     write_u32_column(out, &functions.flags);
     write_u32_column(out, &functions.line);
+    write_u32_column(out, &raw_from(&functions.body, |value| value.0));
 
     let parameters = &tables.parameters;
     write_u32_column(out, &raw_from(&parameters.owner, |value| value.0));
@@ -445,6 +459,10 @@ fn decode_functions(
         .collect();
     functions.flags = read_u32_column(bytes, cursor)?;
     functions.line = read_u32_column(bytes, cursor)?;
+    functions.body = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(crate::handles::ExpressionId)
+        .collect();
 
     let parameters = &mut tables.parameters;
     parameters.owner = read_u32_column(bytes, cursor)?

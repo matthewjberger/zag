@@ -35,6 +35,25 @@ pub enum NodeKind {
     TypeResult = 24,
     Discard = 25,
     Module = 26,
+    /// The operator in `text`, the two sides as children.
+    ExpressionBinary = 27,
+    ExpressionUnary = 28,
+    /// The field name in `text`, the thing on the left as the only child.
+    ExpressionField = 29,
+    ExpressionIndex = 30,
+    /// Condition, then, and optionally else. Rust makes this an expression, so
+    /// the same node serves whether it was written as a value or a statement.
+    ExpressionBranch = 31,
+    ExpressionBlock = 32,
+    ExpressionReturn = 33,
+    /// The name in `text`, the value as the only child.
+    ExpressionLet = 34,
+    ExpressionAssign = 35,
+    ExpressionGroup = 36,
+    /// Rust's `?`, which is what Zig's `try` becomes.
+    ExpressionQuestion = 37,
+    /// A statement whose value is thrown away, so it ends in a semicolon.
+    Statement = 38,
 }
 
 #[repr(u32)]

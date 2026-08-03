@@ -155,6 +155,10 @@ pub struct Functions {
     /// One-based line in the module that declares it, so the report can say
     /// where rather than only what. Zero where nothing recorded one.
     pub line: Vec<u32>,
+    /// The block the function body is, absent where nothing read one. A
+    /// statement is an expression here, because that is what it is in both
+    /// languages and two vocabularies for one thing help nobody.
+    pub body: Vec<ExpressionId>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
@@ -208,6 +212,28 @@ pub enum ExpressionKind {
     StructLiteral = 5,
     Unsupported = 6,
     Null = 7,
+    /// A name the body mentions, which is a parameter or a local.
+    Identifier = 8,
+    /// `x.field`, with the thing on the left as the only child.
+    Field = 9,
+    /// Two children and the operator in `text`.
+    Binary = 10,
+    /// One child and the operator in `text`.
+    Unary = 11,
+    Index = 12,
+    /// The callee in `text` and the arguments as children.
+    Call = 13,
+    /// The condition, what to do, and optionally what to do instead. Rust and
+    /// Zig both make this an expression, so nothing has to be reshaped.
+    Branch = 14,
+    Block = 15,
+    Return = 16,
+    /// The name in `text` and the value as the only child.
+    Let = 17,
+    Assign = 18,
+    Group = 19,
+    /// Zig's `try`, which is Rust's `?`.
+    Question = 20,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]

@@ -285,6 +285,7 @@ fn every_disposition() -> Vec<zag_emit::report::Disposition> {
     let all = vec![
         Disposition::Constructor,
         Disposition::SubsumedByDrop,
+        Disposition::Ported,
         Disposition::Signature,
         Disposition::NotPorted(Refusal::ReturnTypeUnresolved),
         Disposition::NotPorted(Refusal::UnnamedErrorSet),
@@ -293,7 +294,10 @@ fn every_disposition() -> Vec<zag_emit::report::Disposition> {
     ];
     for outcome in &all {
         match outcome {
-            Disposition::Constructor | Disposition::SubsumedByDrop | Disposition::Signature => {}
+            Disposition::Constructor
+            | Disposition::SubsumedByDrop
+            | Disposition::Ported
+            | Disposition::Signature => {}
             Disposition::NotPorted(refusal) => match refusal {
                 Refusal::ReturnTypeUnresolved
                 | Refusal::UnnamedErrorSet

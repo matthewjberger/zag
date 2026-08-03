@@ -108,6 +108,8 @@ fn write_field(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership, row: u
 pub enum Disposition {
     Constructor,
     SubsumedByDrop,
+    /// Signature and body both, which is the whole function.
+    Ported,
     Signature,
     /// Nothing was written, and the reason names what would have to change.
     NotPorted(crate::function::Refusal),
@@ -198,9 +200,20 @@ pub fn disposition(
     {
         return Disposition::SubsumedByDrop;
     }
-    match crate::function::signature_refusal(tables, ownership, lowering, function) {
-        Some(refusal) => Disposition::NotPorted(refusal),
-        None => Disposition::Signature,
+    if let Some(refusal) = crate::function::signature_refusal(tables, ownership, lowering, function)
+    {
+        return Disposition::NotPorted(refusal);
+    }
+    match tables
+        .functions
+        .body
+        .get(function.0 as usize)
+        .copied()
+        .filter(|body| body.0 != NO_INDEX)
+        .is_some_and(|body| crate::body::is_spellable(tables, body, 0))
+    {
+        true => Disposition::Ported,
+        false => Disposition::Signature,
     }
 }
 
@@ -210,6 +223,7 @@ pub fn outcome_text(disposition: Disposition) -> &'static [u8] {
     match disposition {
         Disposition::Constructor => b"ported, as the constructor",
         Disposition::SubsumedByDrop => b"disappears, Drop frees what it freed",
+        Disposition::Ported => b"ported, signature and body",
         Disposition::Signature => b"ported, signature only, the body is still to write",
         Disposition::NotPorted(refusal) => refusal_text(refusal),
     }

@@ -166,7 +166,8 @@ fn lower_expression(
             let name = push_string(&mut ast.strings, b"None");
             push_node(ast, NodeKind::ExpressionPath, name, absent(), 0, 0, &[])
         }
-        ExpressionKind::Unsupported => unsupported(ast),
+        // Everything a body is made of, which a field initialiser never is.
+        _ => unsupported(ast),
     }
 }
 

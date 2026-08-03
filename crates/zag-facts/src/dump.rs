@@ -120,6 +120,19 @@ fn expression_kind(kind: ExpressionKind) -> &'static str {
         ExpressionKind::StructLiteral => "struct",
         ExpressionKind::Unsupported => "unsupported",
         ExpressionKind::Null => "null",
+        ExpressionKind::Identifier => "identifier",
+        ExpressionKind::Field => "field",
+        ExpressionKind::Binary => "binary",
+        ExpressionKind::Unary => "unary",
+        ExpressionKind::Index => "index",
+        ExpressionKind::Call => "call",
+        ExpressionKind::Branch => "branch",
+        ExpressionKind::Block => "block",
+        ExpressionKind::Return => "return",
+        ExpressionKind::Let => "let",
+        ExpressionKind::Assign => "assign",
+        ExpressionKind::Group => "group",
+        ExpressionKind::Question => "question",
     }
 }
 

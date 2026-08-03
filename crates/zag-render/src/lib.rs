@@ -325,11 +325,19 @@ fn render_function(
     for slot in children.start + parameters + 1..children.end {
         let statement = ast.children[slot];
         indent(out, depth + 1);
-        if kind_of(ast, statement)? == NodeKind::Discard {
-            out.extend_from_slice(b"let _ = ");
-            out.extend_from_slice(text_of(ast, statement));
-            out.extend_from_slice(b";\n");
-            continue;
+        match kind_of(ast, statement)? {
+            NodeKind::Discard => {
+                out.extend_from_slice(b"let _ = ");
+                out.extend_from_slice(text_of(ast, statement));
+                out.extend_from_slice(b";\n");
+                continue;
+            }
+            NodeKind::Statement => {
+                render_expression(out, ast, only_child(ast, statement)?, depth + 1)?;
+                out.extend_from_slice(b";\n");
+                continue;
+            }
+            _ => {}
         }
         render_expression(out, ast, statement, depth + 1)?;
         out.extend_from_slice(b"\n");
@@ -391,8 +399,121 @@ fn render_expression(
             out.extend_from_slice(b"}");
             Ok(())
         }
+        NodeKind::ExpressionBinary => {
+            let children = node_children(ast, node);
+            if children.len() != 2 {
+                return Err(RenderError::MissingChild { node });
+            }
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.push(b' ');
+            out.extend_from_slice(text_of(ast, node));
+            out.push(b' ');
+            render_expression(out, ast, ast.children[children.start + 1], depth)
+        }
+        NodeKind::ExpressionUnary => {
+            out.extend_from_slice(text_of(ast, node));
+            render_expression(out, ast, only_child(ast, node)?, depth)
+        }
+        NodeKind::ExpressionField => {
+            render_expression(out, ast, only_child(ast, node)?, depth)?;
+            out.push(b'.');
+            out.extend_from_slice(text_of(ast, node));
+            Ok(())
+        }
+        NodeKind::ExpressionIndex => {
+            let children = node_children(ast, node);
+            if children.len() != 2 {
+                return Err(RenderError::MissingChild { node });
+            }
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.push(b'[');
+            render_expression(out, ast, ast.children[children.start + 1], depth)?;
+            out.push(b']');
+            Ok(())
+        }
+        NodeKind::ExpressionGroup => {
+            out.push(b'(');
+            render_expression(out, ast, only_child(ast, node)?, depth)?;
+            out.push(b')');
+            Ok(())
+        }
+        NodeKind::ExpressionQuestion => {
+            render_expression(out, ast, only_child(ast, node)?, depth)?;
+            out.push(b'?');
+            Ok(())
+        }
+        NodeKind::ExpressionReturn => {
+            out.extend_from_slice(b"return");
+            let children = node_children(ast, node);
+            if !children.is_empty() {
+                out.push(b' ');
+                render_expression(out, ast, ast.children[children.start], depth)?;
+            }
+            Ok(())
+        }
+        NodeKind::ExpressionLet => {
+            out.extend_from_slice(b"let ");
+            out.extend_from_slice(text_of(ast, node));
+            out.extend_from_slice(b" = ");
+            render_expression(out, ast, only_child(ast, node)?, depth)
+        }
+        NodeKind::ExpressionAssign => {
+            let children = node_children(ast, node);
+            if children.len() != 2 {
+                return Err(RenderError::MissingChild { node });
+            }
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.extend_from_slice(b" = ");
+            render_expression(out, ast, ast.children[children.start + 1], depth)
+        }
+        NodeKind::ExpressionBranch => {
+            let children = node_children(ast, node);
+            if children.len() < 2 {
+                return Err(RenderError::MissingChild { node });
+            }
+            out.extend_from_slice(b"if ");
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.push(b' ');
+            render_expression(out, ast, ast.children[children.start + 1], depth)?;
+            if children.len() > 2 {
+                out.extend_from_slice(b" else ");
+                render_expression(out, ast, ast.children[children.start + 2], depth)?;
+            }
+            Ok(())
+        }
+        NodeKind::ExpressionBlock => render_block(out, ast, node, depth),
         found => Err(RenderError::WrongKind { node, found }),
     }
+}
+
+/// A braced body. Everything but the last child ends in a semicolon, and the
+/// last is the value the block has, which is how Rust writes a return.
+fn render_block(
+    out: &mut Vec<u8>,
+    ast: &Ast,
+    node: NodeId,
+    depth: usize,
+) -> Result<(), RenderError> {
+    let children = node_children(ast, node);
+    if children.is_empty() {
+        out.extend_from_slice(b"{}");
+        return Ok(());
+    }
+    out.extend_from_slice(b"{\n");
+    for slot in children.clone() {
+        let statement = ast.children[slot];
+        indent(out, depth + 1);
+        if kind_of(ast, statement)? == NodeKind::Statement {
+            render_expression(out, ast, only_child(ast, statement)?, depth + 1)?;
+            out.extend_from_slice(b";\n");
+            continue;
+        }
+        render_expression(out, ast, statement, depth + 1)?;
+        out.push(b'\n');
+    }
+    indent(out, depth);
+    out.push(b'}');
+    Ok(())
 }
 
 fn lifetime_text(flags: u32) -> &'static [u8] {

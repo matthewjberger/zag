@@ -27,6 +27,10 @@ pub struct Function {
     pub calls: Vec<Call>,
     pub locals: Vec<(String, String)>,
     pub initialisers: Vec<Initialiser>,
+    /// The body, flattened. Every node is here, and `body` names the ones the
+    /// block is made of, in order.
+    pub nodes: Vec<Node>,
+    pub body: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,10 +69,27 @@ pub struct Program {
     pub layouts: Vec<(String, Layout)>,
 }
 
+/// One node of a function body, named by its index in the Zig syntax tree.
+/// Children arrive before parents, so a reader always has what a node refers
+/// to before it needs it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Node {
+    pub node: u32,
+    pub kind: String,
+    pub text: String,
+    pub line: u32,
+    pub left: Option<u32>,
+    pub right: Option<u32>,
+    pub otherwise: Option<u32>,
+    pub operands: Vec<u32>,
+}
+
 fn value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let start = line.find(&format!(" {key}="))? + key.len() + 2;
     let rest = &line[start..];
-    if key == "value" || key == "type" || key == "returns" {
+    // These take the whole rest of the line, because the Zig they carry may
+    // contain spaces and is always written last.
+    if key == "value" || key == "type" || key == "returns" || key == "text" {
         return Some(rest);
     }
     Some(rest.split_whitespace().next().unwrap_or(rest))
@@ -182,9 +203,68 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     });
                 }
             }
+            // A body arrives as `expression` and `statement` rows, children
+            // before parents, then `operand` rows for the ones with a list and
+            // `step`/`body` for the block the function is.
+            "expression" | "statement" => {
+                let node = node_identifier(line);
+                let entry = Node {
+                    node,
+                    kind: value(line, "kind").unwrap_or("unsupported").to_string(),
+                    // An operator is the text of the node it belongs to. It
+                    // has its own key because it cannot contain a space and so
+                    // does not have to be written last.
+                    text: value(line, "text")
+                        .or_else(|| value(line, "operator"))
+                        .unwrap_or("")
+                        .to_string(),
+                    line: number(line, "line"),
+                    left: optional(line, "left"),
+                    right: optional(line, "right"),
+                    otherwise: optional(line, "otherwise"),
+                    operands: Vec::new(),
+                };
+                if let Some(function) = function_mut(program, subject) {
+                    function.nodes.push(entry);
+                }
+            }
+            "operand" => {
+                let mut pieces = line.split_whitespace().skip(2);
+                let owner: u32 = pieces
+                    .next()
+                    .and_then(|text| text.parse().ok())
+                    .unwrap_or(0);
+                let node = number(line, "node");
+                if let Some(function) = function_mut(program, subject)
+                    && let Some(entry) = function.nodes.iter_mut().find(|entry| entry.node == owner)
+                {
+                    entry.operands.push(node);
+                }
+            }
+            "step" => {
+                let node = number(line, "node");
+                if let Some(function) = function_mut(program, subject) {
+                    function.body.push(node);
+                }
+            }
             _ => {}
         }
     }
+}
+
+/// The node identifier sits right after the subject rather than under a key,
+/// so it is read positionally.
+fn node_identifier(line: &str) -> u32 {
+    line.split_whitespace()
+        .nth(2)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(0)
+}
+
+fn optional(line: &str, key: &str) -> Option<u32> {
+    value(line, key)
+        .filter(|text| *text != "-")
+        .and_then(|text| text.parse().ok())
 }
 
 pub fn parse_reflection(text: &str, program: &mut Program) {
