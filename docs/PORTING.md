@@ -12,9 +12,9 @@ Nothing here is advice. Each rule is a decision procedure with one answer.
 
 ## The procedure
 
-1. Run the pipeline over the program. `just port <name>` does this for any of
-   the programs `just names` lists, writing the Rust and the report into
-   `target/` and printing both.
+1. Run the pipeline over the program. `just read <file>` does this for any Zig
+   file, and `just port <name>` for the examples `just names` lists. Both write
+   into `target/` and print the Rust and the report.
 2. Read the report before reading the generated Rust. The report says what was
    decided for every field and on what evidence.
 3. Settle every field marked `unknown`, and every field marked `low` or
@@ -134,6 +134,20 @@ Provenance resolves each allocator parameter to one of four values.
 An arena field freed individually is contradictory, so zag drops its confidence
 to `medium` and says so. Arena memory is released by resetting the arena, so
 either the Zig has a bug or the allocator was misidentified.
+
+## Bodies the port writes for you
+
+A struct whose Zig `init` sets every field to something the port can spell gets
+a constructor, and nothing is written when even one field falls outside that
+set. What it can spell is a literal, a parameter, a `len`, an `@intCast`, an
+allocation, and a struct literal made of those.
+
+The allocator parameter is gone from the signature. Where provenance resolved
+it to the global allocator, `Box` is the allocator, so the port takes one fewer
+argument than the Zig did. An arena stays, because the arena still has to come
+from somewhere.
+
+Everything below is the rest, which is still yours to write.
 
 ## Writing the bodies
 

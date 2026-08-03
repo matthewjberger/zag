@@ -18,12 +18,14 @@ zig build run
 
 ## Porting one
 
-The Zig frontend does not exist yet, so the fact tables each program would
-produce are built by hand in `crates/zag-facts/src/examples/`, and the rest of
-the pipeline is real.
+`zag read --zig <file>` builds fact tables from a program by reading it, which
+is what `just read` runs. Each example also carries tables built by hand in
+`crates/zag-facts/src/examples/`, from before the frontend existed. The tests
+require both routes to produce the same port, so the hand-built tables are the
+oracle the frontend is held to.
 
-Those tables are not taken on trust. Two tools read the programs and the tests
-hold the tables to what they find.
+Two tools do the reading, and the tests hold the hand-built tables to what they
+find as well.
 
 `tools/reflect` imports an example and asks the compiler what it resolved:
 every struct, its layout, every field in order with its offset, and every

@@ -14,8 +14,9 @@ borrow checker has nothing to fight and `unsafe_code = "forbid"` costs nothing
 to hold.
 
 Zag is under construction. Everything described below runs and is covered by
-the test suite, but the Zig frontend does not exist yet, so hand-built fact
-tables stand in for a real compilation.
+the test suite. It reads real Zig, decides ownership, and writes structs,
+enums, layout assertions, and the constructors whose bodies it can spell.
+Generics and comptime need semantic analysis it does not do yet.
 
 ## Getting started
 
@@ -25,9 +26,10 @@ A Rust toolchain and [`just`](https://github.com/casey/just).
 git clone https://github.com/matthewjberger/zag
 cd zag
 
-just names            # the programs that can be ported
-just port wordcount   # port one, and print the Rust and the report
-just check            # format, lint, and the whole suite
+just read path/to.zig   # port any Zig file, and print the Rust and the report
+just names              # the example programs
+just port netpacket     # port one of them
+just check              # format, lint, and the whole suite
 ```
 
 `just port` writes into `target/`, so reading a port never disturbs what the
@@ -151,21 +153,25 @@ later.
 
 ## The Zig side
 
-`tools/reflect` and `tools/extract` are what exists so far. One asks the
-compiler what a program declares and the other parses it for the dataflow, and
-between them they hold the fact tables to the program they describe. Neither
-resolves a type to decide anything, so an allocator named wrongly still gets
-past them.
+The frontend asks the compiler twice. `tools/reflect` resolves declarations and
+layout through comptime reflection, and is analysed rather than linked, so no
+platform's libc is involved. `tools/extract` parses the file for the dataflow
+and for the private declarations reflection cannot see. `zag-frontend` merges
+the two into fact tables.
 
-Closing that is the frontend, and the plan for it is to instrument rather than
-to reverse engineer. Zig's `Sema` already resolves generic instantiations,
-inferred error sets, comptime branches, and types, then discards them.
-Vendoring the compiler and logging those decisions turns the hardest analyses
-in this project into a serialisation problem, and `InternPool` is already the
-structure of arrays this crate expects.
+Both read syntax rather than semantics. `x.dupe(...)` is an allocation because
+of how it is spelled, not because `x` resolved to an allocator, so a program
+that spells one of these differently gets an `unknown` rather than a wrong
+answer. Generics and comptime have nothing to spell at all until the compiler
+instantiates them.
 
-That side stays deliberately small and free of analysis, because it is the part
-upstream Zig will keep breaking.
+Closing that means instrumenting rather than reverse engineering. Zig's `Sema`
+already resolves generic instantiations, inferred error sets, comptime
+branches, and types, then discards them. Vendoring the compiler and logging
+those decisions turns the hardest analyses in this project into a serialisation
+problem, and `InternPool` is already the structure of arrays this crate
+expects. That side would stay small and free of analysis, because it is the
+part upstream Zig will keep breaking.
 
 ## Tests
 

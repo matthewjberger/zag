@@ -34,7 +34,8 @@ These are load-bearing. Breaking one is a design change, not a refactor.
 example. `zag-analysis` is the three passes. `zag-render` owns the flat Rust
 syntax tree and prints it. `zag-emit` lowers facts plus analysis into that tree
 and into the review report. `zag-repair` turns compiler diagnostics into span
-edits. `zag` is the driver. `zag-verify` exists only to compile the checked in
+edits. `zag-frontend` merges what the two Zig tools report into fact tables,
+which is what `zag read` runs. `zag` is the driver. `zag-verify` exists only to compile the checked in
 ports so their layout assertions run during `cargo build`, and
 `crates/zag/tests/compilation.rs` does the same to freshly generated ones so a
 broken emitter fails before anything is regenerated.
