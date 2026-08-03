@@ -29,6 +29,11 @@ enum Command {
         #[arg(long, default_value = "x86_64-linux")]
         target: String,
     },
+    /// Prints a fact file as text, one row per line
+    Dump {
+        #[arg(long)]
+        facts: PathBuf,
+    },
     /// Reads a fact file and writes the ported Rust and its ownership report
     Emit {
         #[arg(long)]
@@ -75,6 +80,14 @@ fn run(arguments: Arguments) -> Result<(), String> {
             let modules = zag::read_project(&zig)?;
             let tables = zag_frontend::build_project(&modules, &target);
             write(&output, &zag_facts::wire::encode(&tables))
+        }
+        Command::Dump { facts } => {
+            let bytes =
+                std::fs::read(&facts).map_err(|cause| format!("{}: {cause}", facts.display()))?;
+            let tables = zag_facts::wire::decode(&bytes)
+                .map_err(|cause| format!("the fact file could not be read: {cause:?}"))?;
+            print!("{}", zag_facts::dump::dump(&tables));
+            Ok(())
         }
         Command::Emit {
             facts,

@@ -21,4 +21,4 @@ Frame.source
 functions: 3
   Frame.init: ported, as the constructor
   Frame.deinit: disappears, Drop frees what it freed
-  main: still to write, the port cannot spell what it gives back
+  main: still to write, the error set it can fail with has no name

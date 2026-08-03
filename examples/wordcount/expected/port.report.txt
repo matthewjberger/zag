@@ -18,7 +18,8 @@ Counts.lines
   confidence: high
 
 functions: 4
-  Counts.init: still to write, the port cannot spell what it gives back
+  Counts.init: still to write, the error set it can fail with has no name
+    no constructor: nothing the port could read assigns words
   Counts.deinit: disappears, Drop frees what it freed
   release: disappears, Drop frees what it freed
-  main: still to write, the port cannot spell what it gives back
+  main: still to write, the error set it can fail with has no name

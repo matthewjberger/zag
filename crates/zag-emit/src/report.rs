@@ -109,7 +109,8 @@ pub enum Disposition {
     Constructor,
     SubsumedByDrop,
     Signature,
-    NotPorted,
+    /// Nothing was written, and the reason names what would have to change.
+    NotPorted(crate::function::Refusal),
 }
 
 fn owner_of(tables: &Tables, function: FunctionId) -> Option<zag_facts::StructId> {
@@ -153,16 +154,19 @@ fn declared_deinit_disappears(
 /// A helper the deinit calls disappears on the same grounds the deinit does.
 /// Its whole effect is to free fields `Drop` now frees, so writing it out
 /// would leave a function with nothing left to do.
-fn frees_and_nothing_else(tables: &Tables, ownership: &Ownership, function: FunctionId) -> bool {
-    if tables.field_assignments.function.contains(&function) {
+fn frees_and_nothing_else(
+    tables: &Tables,
+    ownership: &Ownership,
+    index: &crate::index::Index,
+    function: FunctionId,
+) -> bool {
+    if crate::index::assigns_anything(index, function) {
         return false;
     }
     let operations = &tables.memory_operations;
-    let mut freed = 0;
-    for row in 0..zag_facts::tables::memory_operation_count(operations) {
-        if operations.function.get(row).copied() != Some(function) {
-            continue;
-        }
+    let rows = crate::index::operations_of(index, function);
+    for row in rows {
+        let row = *row as usize;
         if operations.kind.get(row) != Some(&MemoryOperationKind::Free) {
             return false;
         }
@@ -174,9 +178,8 @@ fn frees_and_nothing_else(tables: &Tables, ownership: &Ownership, function: Func
         if ownership.class.get(field.0 as usize) != Some(&OwnershipClass::Owned) {
             return false;
         }
-        freed += 1;
     }
-    freed > 0
+    !rows.is_empty()
 }
 
 pub fn disposition(
@@ -186,19 +189,188 @@ pub fn disposition(
     function: FunctionId,
 ) -> Disposition {
     if let Some(owner) = owner_of(tables, function)
-        && crate::constructor::writable_init(tables, ownership, owner) == Some(function)
+        && crate::constructor::writable_init(tables, ownership, lowering, owner) == Some(function)
     {
         return Disposition::Constructor;
     }
     if declared_deinit_disappears(tables, ownership, function)
-        || frees_and_nothing_else(tables, ownership, function)
+        || frees_and_nothing_else(tables, ownership, lowering.index, function)
     {
         return Disposition::SubsumedByDrop;
     }
-    if crate::function::writes_a_signature(tables, ownership, lowering, function) {
-        return Disposition::Signature;
+    match crate::function::signature_refusal(tables, ownership, lowering, function) {
+        Some(refusal) => Disposition::NotPorted(refusal),
+        None => Disposition::Signature,
     }
-    Disposition::NotPorted
+}
+
+/// What the report says about an outcome. Exposed so the guide can be checked
+/// against the wording the tool actually writes rather than a copy of it.
+pub fn outcome_text(disposition: Disposition) -> &'static [u8] {
+    match disposition {
+        Disposition::Constructor => b"ported, as the constructor",
+        Disposition::SubsumedByDrop => b"disappears, Drop frees what it freed",
+        Disposition::Signature => b"ported, signature only, the body is still to write",
+        Disposition::NotPorted(refusal) => refusal_text(refusal),
+    }
+}
+
+fn refusal_text(refusal: crate::function::Refusal) -> &'static [u8] {
+    use crate::function::Refusal;
+    match refusal {
+        Refusal::ReturnTypeUnresolved => b"still to write, what it returns did not resolve",
+        Refusal::UnnamedErrorSet => b"still to write, the error set it can fail with has no name",
+        Refusal::ReturnBorrowsAnArena => {
+            b"still to write, what it returns borrows from an arena the port drops"
+        }
+        Refusal::ReturnBorrowsWithNothingToTieItTo => {
+            b"still to write, what it returns borrows and no parameter can carry the lifetime"
+        }
+    }
+}
+
+fn field_name(tables: &Tables, field: FieldId) -> &[u8] {
+    tables
+        .fields
+        .name
+        .get(field.0 as usize)
+        .map(|name| string_bytes(&tables.strings, *name))
+        .unwrap_or(b"")
+}
+
+/// Why the struct this `init` belongs to got no constructor. The reason names
+/// the field that stopped it, because that is what somebody writing the body
+/// has to deal with first.
+fn write_constructor_refusal(
+    out: &mut Vec<u8>,
+    tables: &Tables,
+    ownership: &Ownership,
+    lowering: crate::lower::Lowering,
+    function: FunctionId,
+) {
+    use crate::constructor::Refusal;
+    let Some(owner) = owner_of(tables, function) else {
+        return;
+    };
+    let Err(refusal) = crate::constructor::constructor_for(tables, ownership, lowering, owner)
+    else {
+        return;
+    };
+    match refusal {
+        // Neither is about this function: a struct with no init of its own, or
+        // an init that fills nothing, has nothing to explain here.
+        Refusal::NoInit | Refusal::NoFields => {}
+        // The Zig may well assign it. What the tables say is that nothing the
+        // frontend could read does, which is a different claim and the one
+        // worth making.
+        Refusal::NothingAssigns(field) => write_line(
+            out,
+            &[
+                b"    no constructor: nothing the port could read assigns ",
+                field_name(tables, field),
+            ],
+        ),
+        Refusal::NotSpellable(field) => {
+            match crate::constructor::unspellable_text(tables, ownership, lowering, owner) {
+                Some(text) => write_line(
+                    out,
+                    &[
+                        b"    no constructor: ",
+                        field_name(tables, field),
+                        b" is set from ",
+                        &text,
+                        b", which the port cannot spell",
+                    ],
+                ),
+                None => write_line(
+                    out,
+                    &[
+                        b"    no constructor: ",
+                        field_name(tables, field),
+                        b" is set from something the port cannot spell",
+                    ],
+                ),
+            }
+        }
+        Refusal::OwnershipUnknown(field) => write_line(
+            out,
+            &[
+                b"    no constructor: who owns ",
+                field_name(tables, field),
+                b" was not decided",
+            ],
+        ),
+    }
+}
+
+fn class_text_of(class: zag_analysis::provenance::AllocatorClass) -> &'static [u8] {
+    use zag_analysis::provenance::AllocatorClass;
+    match class {
+        AllocatorClass::Unset => b"nothing",
+        AllocatorClass::Global => b"the global allocator",
+        AllocatorClass::Arena => b"an arena",
+        AllocatorClass::Conflicting => b"more than one allocator",
+    }
+}
+
+/// Which callers disagreed about an allocator parameter. The field section
+/// says a field's allocator does not resolve; this says who to go and look at.
+fn write_disagreements(out: &mut Vec<u8>, tables: &Tables, analysis: &Analysis) {
+    let disagreements = &analysis.provenance.disagreements;
+    if disagreements.is_empty() {
+        return;
+    }
+    out.push(b'\n');
+    write_line(
+        out,
+        &[
+            b"allocator conflicts: ",
+            disagreements.len().to_string().as_bytes(),
+        ],
+    );
+    for entry in disagreements {
+        let holder = tables
+            .parameters
+            .owner
+            .get(entry.parameter as usize)
+            .copied()
+            .unwrap_or(FunctionId(NO_INDEX));
+        let parameter = tables
+            .parameters
+            .name
+            .get(entry.parameter as usize)
+            .map(|name| string_bytes(&tables.strings, *name))
+            .unwrap_or(b"");
+        write_line(
+            out,
+            &[
+                b"  ",
+                function_name(tables, holder).unwrap_or(b""),
+                b" takes ",
+                parameter,
+                b" from callers that disagree",
+            ],
+        );
+        for (row, class) in [
+            (entry.first, entry.first_class),
+            (entry.second, entry.second_class),
+        ] {
+            let caller = tables
+                .call_arguments
+                .call
+                .get(row as usize)
+                .and_then(|call| tables.calls.caller.get(call.0 as usize))
+                .copied()
+                .unwrap_or(FunctionId(NO_INDEX));
+            match function_name(tables, caller) {
+                Some(name) => write_line(out, &[b"    from ", name, b": ", class_text_of(class)]),
+                None => write_line(
+                    out,
+                    &[b"    from an unknown caller: ", class_text_of(class)],
+                ),
+            }
+        }
+    }
 }
 
 fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
@@ -207,6 +379,7 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
         return;
     }
     let lifetimes = crate::lower::lifetimes_by_type(tables, ownership);
+    let lookups = crate::index::build_index(tables);
     let qualified = zag_facts::tables::has_submodules(&tables.modules);
     out.push(b'\n');
     write_line(out, &[b"functions: ", count.to_string().as_bytes()]);
@@ -228,17 +401,15 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
             .get(index)
             .copied()
             .unwrap_or(zag_facts::tables::ROOT_MODULE);
-        let lowering = crate::lower::lowering(&lifetimes, module, qualified);
-        let outcome: &[u8] = match disposition(tables, ownership, lowering, handle) {
-            Disposition::Constructor => b"ported, as the constructor",
-            Disposition::SubsumedByDrop => b"disappears, Drop frees what it freed",
-            Disposition::Signature => b"ported, signature only, the body is still to write",
-            Disposition::NotPorted => b"still to write, the port cannot spell what it gives back",
-        };
+        let lowering = crate::lower::lowering(&lifetimes, &lookups, module, qualified);
+        let outcome = outcome_text(disposition(tables, ownership, lowering, handle));
         if owner.is_empty() {
             write_line(out, &[b"  ", name, b": ", outcome]);
         } else {
             write_line(out, &[b"  ", owner, b".", name, b": ", outcome]);
+        }
+        if name == b"init" {
+            write_constructor_refusal(out, tables, ownership, lowering, handle);
         }
     }
 }
@@ -298,5 +469,6 @@ pub fn render_report(tables: &Tables, analysis: &Analysis) -> Vec<u8> {
         write_field(&mut out, tables, &analysis.ownership, row);
     }
     write_functions(&mut out, tables, &analysis.ownership);
+    write_disagreements(&mut out, tables, analysis);
     out
 }

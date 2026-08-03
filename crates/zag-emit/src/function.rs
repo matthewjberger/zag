@@ -179,22 +179,37 @@ fn error_set_name(tables: &Tables, function: FunctionId) -> Option<Vec<u8>> {
     (!text.is_empty()).then_some(text)
 }
 
-/// Whether the port can spell what the function gives back. A `!T` whose error
-/// set the Zig never named has no Rust spelling, so the function is left out
-/// rather than given an invented error type. Neither is a lifetime the
-/// signature would have to introduce with nothing to tie it to.
-pub fn writes_a_signature(
+/// Why a function got no signature. Each one is a different thing to go and
+/// fix, so they are kept apart rather than collapsed into one message.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Refusal {
+    /// The frontend could not resolve what the function returns.
+    ReturnTypeUnresolved,
+    /// A `!T` infers its error set from the body, so the Zig named no error
+    /// type and the port will not invent one.
+    UnnamedErrorSet,
+    /// What it returns borrows from an arena, and the allocator that owned
+    /// that arena does not survive the port as a parameter.
+    ReturnBorrowsAnArena,
+    /// What it returns borrows, and nothing in the signature can carry the
+    /// lifetime that borrow needs.
+    ReturnBorrowsWithNothingToTieItTo,
+}
+
+/// Whether the port can spell what the function gives back, and where it
+/// cannot, which of the reasons applies.
+pub fn signature_refusal(
     tables: &Tables,
     ownership: &Ownership,
     lowering: Lowering,
     function: FunctionId,
-) -> bool {
+) -> Option<Refusal> {
     let index = function.0 as usize;
     let Some(returns) = tables.functions.returns.get(index).copied() else {
-        return false;
+        return Some(Refusal::ReturnTypeUnresolved);
     };
     if tables.types.kind.get(returns.0 as usize).is_none() {
-        return false;
+        return Some(Refusal::ReturnTypeUnresolved);
     }
     let fallible = tables
         .functions
@@ -202,18 +217,18 @@ pub fn writes_a_signature(
         .get(index)
         .is_some_and(|flags| flags & FUNCTION_FLAG_FALLIBLE != 0);
     if fallible && error_set_name(tables, function).is_none() {
-        return false;
+        return Some(Refusal::UnnamedErrorSet);
     }
     let declared = lifetimes_to_declare(tables, lowering, ownership, function);
     if declared & STRUCT_FLAG_ARENA_LIFETIME != 0 {
-        return false;
+        return Some(Refusal::ReturnBorrowsAnArena);
     }
     if declared & STRUCT_FLAG_BORROW_LIFETIME != 0
         && (receiver_row(tables, function).is_some() || !has_reference_parameter(tables, function))
     {
-        return false;
+        return Some(Refusal::ReturnBorrowsWithNothingToTieItTo);
     }
-    true
+    None
 }
 
 fn lower_return_type(
@@ -255,7 +270,7 @@ pub fn lower_signature(
     lowering: Lowering,
     function: FunctionId,
 ) -> Option<NodeId> {
-    if !writes_a_signature(tables, ownership, lowering, function) {
+    if signature_refusal(tables, ownership, lowering, function).is_some() {
         return None;
     }
     let receiver = receiver_row(tables, function);
@@ -348,8 +363,16 @@ pub fn signatures_for(
     owner: Option<StructId>,
 ) -> Vec<NodeId> {
     let mut written = Vec::new();
-    for index in 0..zag_facts::tables::function_count(&tables.functions) {
-        let function = FunctionId(index as u32);
+    // Only the functions that could belong here, rather than every function in
+    // the program filtered down, which would be quadratic once a program has
+    // as many structs as functions.
+    let candidates = match owner {
+        Some(owner) => crate::index::methods_of(lowering.index, owner),
+        None => crate::index::free_functions_of(lowering.index, lowering.module),
+    };
+    for row in candidates {
+        let index = *row as usize;
+        let function = FunctionId(*row);
         if tables.functions.module.get(index).copied() != Some(lowering.module) {
             continue;
         }

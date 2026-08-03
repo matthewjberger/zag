@@ -50,6 +50,7 @@ is what the Sema frontend is for.
 ```bash
 just names            # what can be ported
 just port wordcount   # port it into target/ and print the Rust and the report
+just dump wordcount   # print its fact tables as text
 ```
 
 The two steps underneath, for anything that needs them separately:
@@ -116,7 +117,8 @@ spelled with the path to the module that declares it.
 `conflict` is the one that produces a finding rather than a port. `makeCache`
 takes an allocator, one caller hands it the heap and another hands it an arena,
 so the field has no single owner and the report says
-`allocator does not resolve to one allocator`. The emitted type is
+`allocator does not resolve to one allocator` and then names both callers under
+`allocator conflicts:`. The emitted type is
 `Option<core::ptr::NonNull<[u8]>>`, which compiles and owns nothing, so the
 port cannot be finished until a person decides. That is the intended outcome.
 

@@ -19,7 +19,7 @@ Entry.amount
   confidence: high
 
 functions: 4
-  main: still to write, the port cannot spell what it gives back
+  main: still to write, the error set it can fail with has no name
   close: disappears, Drop frees what it freed
-  open: still to write, the port cannot spell what it gives back
+  open: still to write, the error set it can fail with has no name
   total: ported, signature only, the body is still to write

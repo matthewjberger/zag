@@ -93,6 +93,23 @@ A `warning:` line above the fields means allocator provenance did not settle.
 Every allocator below it is understated, so treat the whole report as
 provisional until that is fixed.
 
+### Allocator conflicts
+
+`allocator does not resolve to one allocator` says a field has no single owner.
+The `allocator conflicts:` section at the end says which callers disagreed:
+
+```
+allocator conflicts: 1
+  makeCache takes allocator from callers that disagree
+    from fromHeap: the global allocator
+    from fromArena: an arena
+```
+
+Those two callers are the whole finding. Either split the function so each
+allocator has its own, or hand the ownership decision to the caller and take a
+`&mut` rather than allocating inside. There is no port of the original that is
+right for both.
+
 ### Functions
 
 The report ends with what became of every function.
@@ -102,7 +119,19 @@ The report ends with what became of every function.
 | `ported, as the constructor` | nothing, the body is written |
 | `disappears, Drop frees what it freed` | delete the Zig `deinit`, `Box` already does its job |
 | `ported, signature only, the body is still to write` | fill in the `todo!()`, the signature around it is settled |
-| `still to write, the port cannot spell what it gives back` | write the whole function, starting with what it returns |
+| `still to write, what it returns did not resolve` | find the type the frontend could not read, usually a generic or a comptime result |
+| `still to write, the error set it can fail with has no name` | give the Zig a named error set, or decide the Rust error type yourself |
+| `still to write, what it returns borrows from an arena the port drops` | decide who owns the result, since the arena does not survive the port |
+| `still to write, what it returns borrows and no parameter can carry the lifetime` | decide what the result borrows from and put it in the signature |
+
+Where an `init` produced no constructor, the line under it says which field
+stopped it.
+
+| line | what to do |
+|---|---|
+| `no constructor: nothing the port could read assigns <field>` | the Zig may well assign it, from a loop or a branch the frontend cannot follow. Write that part of the body yourself |
+| `no constructor: <field> is set from <zig>, which the port cannot spell` | port that expression by hand. The Zig it could not read is quoted so you do not have to go looking |
+| `no constructor: who owns <field> was not decided` | fix the ownership finding above first, because the constructor cannot say what it is handing over until you have |
 
 A `deinit` only disappears when every field it frees is one the analysis proved
 owned. A `deinit` that closes a handle, decrements a counter, or frees
@@ -121,6 +150,13 @@ invent something. A `!T` infers its error set from the body, so the Zig named
 no error type and neither can the port. A return type that carries a lifetime
 needs that lifetime tied to a parameter, and an arena lifetime has no parameter
 to tie to once the allocator is gone.
+
+### When the report is not enough
+
+`zag dump` prints the fact tables as text, one row per line, in the order the
+tables hold them. Reach for it when the report says something surprising and
+the question becomes what the tables actually say rather than what the port
+made of them. `just dump <example>` runs it over an example.
 
 ## Modules
 

@@ -45,13 +45,23 @@ fn rust_integer_width(bit_width: u32) -> Option<u32> {
 #[derive(Clone, Copy)]
 pub struct Lowering<'a> {
     pub lifetimes: &'a [u32],
+    /// The cross-table lookups, built once for the whole program. Carried here
+    /// rather than passed alongside because everything that already takes a
+    /// `Lowering` needs them.
+    pub index: &'a crate::index::Index,
     pub module: ModuleId,
     pub qualified: bool,
 }
 
-pub fn lowering(lifetimes: &[u32], module: ModuleId, qualified: bool) -> Lowering<'_> {
+pub fn lowering<'a>(
+    lifetimes: &'a [u32],
+    index: &'a crate::index::Index,
+    module: ModuleId,
+    qualified: bool,
+) -> Lowering<'a> {
     Lowering {
         lifetimes,
+        index,
         module,
         qualified,
     }
@@ -467,8 +477,9 @@ fn lower_module(
     lowering: Lowering,
     items: &mut Vec<NodeId>,
 ) {
-    for index in 0..struct_count(&tables.structs) {
-        let owner = StructId(index as u32);
+    for row in crate::index::structs_of(lowering.index, lowering.module) {
+        let index = *row as usize;
+        let owner = StructId(*row);
         if tables.structs.module.get(index).copied() != Some(lowering.module) {
             continue;
         }
@@ -495,13 +506,14 @@ fn lower_module(
 pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
     let mut ast = empty_ast();
     let lifetimes = lifetimes_by_type(tables, ownership);
+    let lookups = crate::index::build_index(tables);
     let qualified = has_submodules(&tables.modules);
     let mut items = Vec::new();
     lower_module(
         &mut ast,
         tables,
         ownership,
-        lowering(&lifetimes, ROOT_MODULE, qualified),
+        lowering(&lifetimes, &lookups, ROOT_MODULE, qualified),
         &mut items,
     );
     for index in 1..module_count(&tables.modules) {
@@ -511,7 +523,7 @@ pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
             &mut ast,
             tables,
             ownership,
-            lowering(&lifetimes, module, qualified),
+            lowering(&lifetimes, &lookups, module, qualified),
             &mut inside,
         );
         if inside.is_empty() {

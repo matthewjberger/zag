@@ -825,11 +825,14 @@ fn translate(
     text: &str,
 ) -> ExpressionId {
     let trimmed = text.trim().trim_start_matches("try ").trim();
+    // The Zig is kept rather than discarded, so the report can say what it
+    // could not read rather than only that it could not.
     let unsupported = |tables: &mut Tables| {
+        let text = push_string(&mut tables.strings, trimmed.as_bytes());
         push_expression(
             tables,
             ExpressionKind::Unsupported,
-            StringId(NO_INDEX),
+            text,
             NO_INDEX,
             result,
             FieldId(NO_INDEX),

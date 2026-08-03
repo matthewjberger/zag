@@ -280,57 +280,74 @@ fn the_readme_shows_layout_assertions_the_emitter_actually_writes() {
 /// The match proves the list is complete, so a new outcome stops this file
 /// compiling until the guide explains it.
 fn every_disposition() -> Vec<zag_emit::report::Disposition> {
+    use zag_emit::function::Refusal;
     use zag_emit::report::Disposition;
     let all = vec![
         Disposition::Constructor,
         Disposition::SubsumedByDrop,
         Disposition::Signature,
-        Disposition::NotPorted,
+        Disposition::NotPorted(Refusal::ReturnTypeUnresolved),
+        Disposition::NotPorted(Refusal::UnnamedErrorSet),
+        Disposition::NotPorted(Refusal::ReturnBorrowsAnArena),
+        Disposition::NotPorted(Refusal::ReturnBorrowsWithNothingToTieItTo),
     ];
     for outcome in &all {
         match outcome {
-            Disposition::Constructor
-            | Disposition::SubsumedByDrop
-            | Disposition::Signature
-            | Disposition::NotPorted => {}
+            Disposition::Constructor | Disposition::SubsumedByDrop | Disposition::Signature => {}
+            Disposition::NotPorted(refusal) => match refusal {
+                Refusal::ReturnTypeUnresolved
+                | Refusal::UnnamedErrorSet
+                | Refusal::ReturnBorrowsAnArena
+                | Refusal::ReturnBorrowsWithNothingToTieItTo => {}
+            },
         }
     }
     all
 }
 
-/// The wording is read out of real reports rather than repeated here, where it
-/// could drift from the code. Between them the examples reach every outcome,
-/// and the guide has to explain each one it finds.
+/// The wording is read out of the emitter rather than repeated here, where it
+/// could drift from the code.
 #[test]
 fn the_guide_explains_every_outcome_a_function_can_reach() {
     let guide = porting_guide();
-    let mut seen: Vec<String> = Vec::new();
+    for outcome in every_disposition() {
+        let text = String::from_utf8(zag_emit::report::outcome_text(outcome).to_vec())
+            .expect("the wording is text");
+        assert!(
+            guide.contains(&text),
+            "docs/PORTING.md does not explain the outcome {text:?}"
+        );
+    }
+}
+
+/// Every outcome the examples between them reach has to be one the guide
+/// explains, which is the other half of the check above: one proves the guide
+/// covers what the code can say, this proves it covers what it does say.
+#[test]
+fn the_guide_explains_every_outcome_the_examples_produce() {
+    let guide = porting_guide();
     for name in zag_facts::examples::NAMES {
         let tables = zag_facts::examples::tables_for(name).expect("registered");
         let analysis = zag_analysis::analyze(&tables);
         let report = String::from_utf8(render_report(&tables, &analysis)).expect("text");
-        for outcome in report
+        for line in report
             .lines()
             .skip_while(|line| !line.starts_with("functions:"))
             .skip(1)
-            .filter_map(|line| line.rsplit_once(": "))
-            .map(|(_, outcome)| outcome)
+            .take_while(|line| line.starts_with("  "))
+            // The outcome per function is indented two. A line indented four
+            // is the reason a constructor was refused, and it names a field,
+            // so the guide explains its shape rather than its text.
+            .filter(|line| !line.starts_with("    "))
         {
-            if !seen.iter().any(|entry| entry == outcome) {
-                seen.push(outcome.to_string());
-            }
+            let Some((_, outcome)) = line.trim_start().split_once(": ") else {
+                continue;
+            };
+            assert!(
+                guide.contains(outcome),
+                "docs/PORTING.md does not explain {outcome:?}, which {name} produces"
+            );
         }
-    }
-    assert_eq!(
-        seen.len(),
-        every_disposition().len(),
-        "the examples between them should reach every outcome: {seen:?}"
-    );
-    for outcome in &seen {
-        assert!(
-            guide.contains(outcome.as_str()),
-            "docs/PORTING.md does not explain the outcome {outcome:?}"
-        );
     }
 }
 

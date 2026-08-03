@@ -29,6 +29,7 @@ cd zag
 just read path/to.zig   # port a Zig program from its root file, and print it
 just names              # the example programs
 just port netpacket     # port one of them
+just dump netpacket     # print its fact tables as text
 just check              # format, lint, and the whole suite
 ```
 
@@ -110,6 +111,16 @@ Buffer.data
 That field is freed by a function `deinit` calls rather than by `deinit`
 itself, and its allocator is fixed by the one caller of `init`. Neither fact is
 visible from the struct.
+
+The report is a first-class output rather than a log, so it says what to do
+next rather than only what happened. A function that was not ported names the
+reason it could not be, a struct that got no constructor names the field that
+stopped it and quotes the Zig the port could not read, and a field whose
+allocator does not resolve is followed by the two callers that disagreed.
+
+`zag dump` prints the fact tables themselves, one row per line, for when the
+question is what the tables actually say rather than what the port made of
+them.
 
 ## What it decides
 

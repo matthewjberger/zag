@@ -54,7 +54,9 @@ fn ported(program: &Program) -> String {
 fn outcome(program: &Program, function: FunctionId) -> Disposition {
     let analysis = analyze(&program.tables);
     let lifetimes = zag_emit::lower::lifetimes_by_type(&program.tables, &analysis.ownership);
-    let lowering = zag_emit::lower::lowering(&lifetimes, zag_facts::tables::ROOT_MODULE, false);
+    let lookups = zag_emit::index::build_index(&program.tables);
+    let lowering =
+        zag_emit::lower::lowering(&lifetimes, &lookups, zag_facts::tables::ROOT_MODULE, false);
     disposition(&program.tables, &analysis.ownership, lowering, function)
 }
 
@@ -150,7 +152,10 @@ fn an_error_set_the_zig_never_named_leaves_the_function_out() {
         "{}",
         ported(&program)
     );
-    assert_eq!(outcome(&program, function), Disposition::NotPorted);
+    assert_eq!(
+        outcome(&program, function),
+        Disposition::NotPorted(zag_emit::function::Refusal::UnnamedErrorSet)
+    );
 }
 
 #[test]
@@ -273,5 +278,8 @@ fn a_returned_borrow_with_no_reference_parameter_leaves_the_function_out() {
         "{}",
         ported(&program)
     );
-    assert_eq!(outcome(&program, function), Disposition::NotPorted);
+    assert_eq!(
+        outcome(&program, function),
+        Disposition::NotPorted(zag_emit::function::Refusal::ReturnBorrowsWithNothingToTieItTo)
+    );
 }

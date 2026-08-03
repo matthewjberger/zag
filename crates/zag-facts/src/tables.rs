@@ -305,6 +305,17 @@ pub fn has_submodules(modules: &Modules) -> bool {
     module_count(modules) > 1
 }
 
+pub fn expression_children(expressions: &Expressions, row: usize) -> std::ops::Range<usize> {
+    let (Some(&start), Some(&count)) = (
+        expressions.child_start.get(row),
+        expressions.child_count.get(row),
+    ) else {
+        return 0..0;
+    };
+    let start = start as usize;
+    start..start.saturating_add(count as usize)
+}
+
 pub fn module_unresolved(modules: &Modules, id: ModuleId) -> std::ops::Range<usize> {
     let index = id.0 as usize;
     let (Some(&start), Some(&count)) = (

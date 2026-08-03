@@ -255,6 +255,11 @@ fn the_passes_scale_to_a_whole_program() {
         "build={build_time:?} validate={validate_time:?} analyse={analyse_time:?} emit={emit_time:?} encode={encode_time:?}"
     );
 
+    let reported = Instant::now();
+    let report = zag_emit::report::render_report(&tables, &analysis);
+    let report_time = reported.elapsed();
+    println!("report={report_time:?} bytes={}", report.len());
+
     assert!(analysis.provenance.converged);
     assert_eq!(analysis.ownership.class.len(), field_count(&tables.fields));
     let owned = analysis

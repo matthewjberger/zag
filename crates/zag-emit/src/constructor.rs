@@ -10,10 +10,10 @@ use crate::lower::{Lowering, absent, lower_field_type, name_of};
 use zag_analysis::ownership::{Ownership, OwnershipClass};
 use zag_facts::build::push_string;
 use zag_facts::tables::{
-    ExpressionKind, PARAMETER_FLAG_ALLOCATOR, Tables, function_count, function_parameters,
-    string_bytes, struct_fields,
+    ExpressionKind, PARAMETER_FLAG_ALLOCATOR, Tables, function_parameters, string_bytes,
+    struct_fields,
 };
-use zag_facts::{ExpressionId, FieldId, FunctionId, NO_INDEX, StructId};
+use zag_facts::{ExpressionId, FieldId, FunctionId, NO_INDEX, StringId, StructId};
 use zag_render::ast::{Ast, NodeId, NodeKind, push_node};
 
 fn expression_children(tables: &Tables, expression: ExpressionId) -> std::ops::Range<usize> {
@@ -208,43 +208,112 @@ fn struct_named(tables: &Tables, kind: zag_facts::TypeId) -> Vec<u8> {
     string_bytes(&tables.strings, tables.types.name[kind.0 as usize]).to_vec()
 }
 
-fn assignment_for(tables: &Tables, function: FunctionId, field: FieldId) -> Option<ExpressionId> {
-    (0..tables.field_assignments.field.len())
-        .find(|row| {
-            tables.field_assignments.field[*row] == field
-                && tables.field_assignments.function[*row] == function
+fn assignment_for(
+    tables: &Tables,
+    index: &crate::index::Index,
+    function: FunctionId,
+    field: FieldId,
+) -> Option<ExpressionId> {
+    crate::index::assignments_of(index, field)
+        .iter()
+        .find(|row| tables.field_assignments.function.get(**row as usize) == Some(&function))
+        .and_then(|row| {
+            tables
+                .field_assignments
+                .expression
+                .get(*row as usize)
+                .copied()
         })
-        .and_then(|row| tables.field_assignments.expression.get(row).copied())
         .filter(|expression| expression.0 != NO_INDEX)
 }
 
+/// Why a struct got no constructor. Each one names the field that stopped it,
+/// because a reader who has to write the body needs to know which.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Refusal {
+    /// The struct has no `init` of its own to write a constructor from.
+    NoInit,
+    /// An `init` that sets no fields, which is not a constructor of anything.
+    NoFields,
+    NothingAssigns(FieldId),
+    /// The Zig sets it to something outside what the port can spell.
+    NotSpellable(FieldId),
+    /// The analysis could not decide who owns it, so the port cannot say what
+    /// the constructor would be handing over.
+    OwnershipUnknown(FieldId),
+}
+
 /// The Zig `init` a constructor can be written from, which is the one that
-/// belongs to the struct and sets every field to something writable. The
-/// report asks the same question to say what became of each function.
-pub fn writable_init(
+/// belongs to the struct and sets every field to something writable. Both the
+/// emitter and the report ask through here, so what one writes and what the
+/// other explains cannot drift apart.
+pub fn constructor_for(
     tables: &Tables,
     ownership: &Ownership,
+    lowering: Lowering,
     owner: StructId,
-) -> Option<FunctionId> {
-    let function = (0..function_count(&tables.functions))
-        .map(|index| FunctionId(index as u32))
-        .find(|handle| {
-            tables.functions.owner.get(handle.0 as usize) == Some(&owner)
-                && string_bytes(&tables.strings, tables.functions.name[handle.0 as usize])
-                    == b"init"
-        })?;
+) -> Result<FunctionId, Refusal> {
+    let function = crate::index::init_of(lowering.index, owner).ok_or(Refusal::NoInit)?;
     let mut fields = 0;
     for row in struct_fields(&tables.structs, owner) {
-        let expression = assignment_for(tables, function, FieldId(row as u32))?;
+        let field = FieldId(row as u32);
+        let expression = assignment_for(tables, lowering.index, function, field)
+            .ok_or(Refusal::NothingAssigns(field))?;
         if !is_writable(tables, expression) {
-            return None;
+            return Err(Refusal::NotSpellable(field));
         }
         if ownership.class.get(row).copied() == Some(OwnershipClass::Unknown) {
-            return None;
+            return Err(Refusal::OwnershipUnknown(field));
         }
         fields += 1;
     }
-    (fields > 0).then_some(function)
+    if fields == 0 {
+        return Err(Refusal::NoFields);
+    }
+    Ok(function)
+}
+
+pub fn writable_init(
+    tables: &Tables,
+    ownership: &Ownership,
+    lowering: Lowering,
+    owner: StructId,
+) -> Option<FunctionId> {
+    constructor_for(tables, ownership, lowering, owner).ok()
+}
+
+/// The Zig the port could not read, where the refusal was about an expression.
+pub fn unspellable_text(
+    tables: &Tables,
+    ownership: &Ownership,
+    lowering: Lowering,
+    owner: StructId,
+) -> Option<Vec<u8>> {
+    let Err(Refusal::NotSpellable(field)) = constructor_for(tables, ownership, lowering, owner)
+    else {
+        return None;
+    };
+    let function = crate::index::init_of(lowering.index, owner)?;
+    let expression = assignment_for(tables, lowering.index, function, field)?;
+    let text = first_unspellable(tables, expression)?;
+    let bytes = string_bytes(&tables.strings, text);
+    (!bytes.is_empty()).then(|| bytes.to_vec())
+}
+
+/// The innermost expression the port could not spell, which is the one whose
+/// Zig is worth quoting rather than the wrapper around it.
+fn first_unspellable(tables: &Tables, expression: ExpressionId) -> Option<StringId> {
+    let kind = tables
+        .expressions
+        .kind
+        .get(expression.0 as usize)
+        .copied()?;
+    if kind == ExpressionKind::Unsupported {
+        return tables.expressions.text.get(expression.0 as usize).copied();
+    }
+    expression_children(tables, expression)
+        .filter_map(|slot| tables.expressions.children.get(slot).copied())
+        .find_map(|child| first_unspellable(tables, child))
 }
 
 /// The `new` a struct gets, written only when the Zig `init` belongs to it and
@@ -257,12 +326,12 @@ pub fn lower_constructor(
     lowering: Lowering,
     owner: StructId,
 ) -> Option<NodeId> {
-    let function = writable_init(tables, ownership, owner)?;
+    let function = writable_init(tables, ownership, lowering, owner)?;
 
     let mut values = Vec::new();
     for row in struct_fields(&tables.structs, owner) {
         let field = FieldId(row as u32);
-        let expression = assignment_for(tables, function, field)?;
+        let expression = assignment_for(tables, lowering.index, function, field)?;
         let declared = tables
             .fields
             .field_type

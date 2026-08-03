@@ -10,9 +10,26 @@ pub enum AllocatorClass {
     Conflicting = 3,
 }
 
+/// Two call sites that handed one allocator parameter different allocators.
+/// The classes alone say a parameter is conflicting; this says which callers
+/// disagreed, which is the part somebody can go and fix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Disagreement {
+    /// The row in `parameters` the two callers filled.
+    pub parameter: u32,
+    /// The `call_arguments` rows that contributed, in the order they were seen.
+    pub first: u32,
+    pub second: u32,
+    pub first_class: AllocatorClass,
+    pub second_class: AllocatorClass,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Provenance {
     pub parameter_class: Vec<AllocatorClass>,
+    /// Recorded the first time a parameter goes conflicting, so each pair
+    /// appears once however many rounds the fixed point takes.
+    pub disagreements: Vec<Disagreement>,
     pub converged: bool,
 }
 
@@ -77,6 +94,11 @@ fn class_of_source(
 pub fn resolve_allocator_provenance(tables: &Tables) -> Provenance {
     let parameters = parameter_count(&tables.parameters);
     let mut parameter_class = vec![AllocatorClass::Unset; parameters];
+    // The call argument that put each parameter in the class it currently
+    // holds, so a later argument that disagrees can name what it disagreed
+    // with rather than only that it did.
+    let mut witness = vec![NO_INDEX; parameters];
+    let mut disagreements = Vec::new();
     let limit = parameters * 3 + 4;
     let mut converged = false;
     for _ in 0..limit {
@@ -94,11 +116,28 @@ pub fn resolve_allocator_provenance(tables: &Tables) -> Provenance {
                 continue;
             };
             let contributed = class_of_source(tables, &parameter_class, source);
-            let merged = join(parameter_class[slot], contributed);
-            if merged != parameter_class[slot] {
-                parameter_class[slot] = merged;
-                changed = true;
+            let held = parameter_class[slot];
+            let merged = join(held, contributed);
+            if merged == held {
+                continue;
             }
+            if merged == AllocatorClass::Conflicting
+                && held != AllocatorClass::Unset
+                && contributed != AllocatorClass::Conflicting
+            {
+                disagreements.push(Disagreement {
+                    parameter: slot as u32,
+                    first: witness[slot],
+                    second: row as u32,
+                    first_class: held,
+                    second_class: contributed,
+                });
+            }
+            if merged != AllocatorClass::Conflicting {
+                witness[slot] = row as u32;
+            }
+            parameter_class[slot] = merged;
+            changed = true;
         }
         if !changed {
             converged = true;
@@ -107,6 +146,7 @@ pub fn resolve_allocator_provenance(tables: &Tables) -> Provenance {
     }
     Provenance {
         parameter_class,
+        disagreements,
         converged,
     }
 }

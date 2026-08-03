@@ -47,10 +47,11 @@ Cache.entries
   evidence: no assignment to this field was found
 
 functions: 7
-  Buffer.init: still to write, the port cannot spell what it gives back
+  Buffer.init: still to write, the error set it can fail with has no name
+    no constructor: nothing the port could read assigns data
   Buffer.deinit: disappears, Drop frees what it freed
   release: disappears, Drop frees what it freed
-  makeBuffer: still to write, the port cannot spell what it gives back
-  parseNode: still to write, the port cannot spell what it gives back
-  parseTree: still to write, the port cannot spell what it gives back
+  makeBuffer: still to write, the error set it can fail with has no name
+  parseNode: still to write, the error set it can fail with has no name
+  parseTree: still to write, the error set it can fail with has no name
   makeView: ported, signature only, the body is still to write

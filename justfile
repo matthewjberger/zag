@@ -127,6 +127,15 @@ read file:
     @echo "=== target/read.report.txt ==="
     @cat target/read.report.txt
 
+# Prints one example's fact tables as text. `just dump tokenizer`
+#
+# The wire format is columns of numbers and says nothing to a reader. This is
+# the same data one row per line, which is what to grep when a port looks wrong
+# and the question is what the tables actually say.
+dump name:
+    @cargo run -q -p zag -- facts --example {{name}} --output target/{{name}}.facts
+    @cargo run -q -p zag -- dump --facts target/{{name}}.facts
+
 # Lists the examples that can be ported
 @names:
     cargo run -q -p zag -- examples

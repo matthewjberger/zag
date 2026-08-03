@@ -45,4 +45,4 @@ ParseError.TooLarge
 functions: 3
   area: ported, signature only, the body is still to write
   parse: ported, signature only, the body is still to write
-  main: still to write, the port cannot spell what it gives back
+  main: still to write, the error set it can fail with has no name

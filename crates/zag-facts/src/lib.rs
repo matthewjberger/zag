@@ -1,4 +1,5 @@
 pub mod build;
+pub mod dump;
 pub mod examples;
 pub mod fixture;
 pub mod handles;

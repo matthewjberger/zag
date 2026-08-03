@@ -1,13 +1,14 @@
 use crate::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern,
-    push_allocator_source, push_call, push_call_argument, push_field_assignment, push_integer_type,
-    push_memory_operation, push_opaque_type, push_pointer_type, push_slice_type, push_void_type,
-    set_function_signature, set_struct_deinit, struct_type,
+    push_allocator_source, push_call, push_call_argument, push_expression,
+    push_field_assignment_with, push_integer_type, push_memory_operation, push_opaque_type,
+    push_pointer_type, push_slice_type, push_void_type, set_function_signature, set_struct_deinit,
+    struct_type,
 };
-use crate::handles::{FunctionId, NO_INDEX, StructId};
+use crate::handles::{FieldId, FunctionId, NO_INDEX, StringId, StructId};
 use crate::tables::{
-    AllocatorSourceKind, AssignmentSource, MemoryOperationKind, PARAMETER_FLAG_ALLOCATOR,
-    PARAMETER_FLAG_MUTABLE, PlaceKind, Tables, empty_tables,
+    AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind,
+    PARAMETER_FLAG_ALLOCATOR, PARAMETER_FLAG_MUTABLE, PlaceKind, Tables, empty_tables,
 };
 
 pub fn tables() -> Tables {
@@ -120,12 +121,25 @@ pub fn tables() -> Tables {
         PlaceKind::FieldOfParameter,
         counts_text,
     );
-    push_field_assignment(
+    // `words` and `lines` are counted in a loop, so nothing the frontend can
+    // read assigns them and they carry no expression at all. `text` is the
+    // copy the allocation makes.
+    let copied = push_expression(
+        &mut tables,
+        ExpressionKind::Allocation,
+        StringId(NO_INDEX),
+        1,
+        text,
+        FieldId(NO_INDEX),
+        &[],
+    );
+    push_field_assignment_with(
         &mut tables,
         counts_text,
         initialize,
         AssignmentSource::Allocation,
         allocate,
+        copied,
     );
 
     tables
