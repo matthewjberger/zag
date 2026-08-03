@@ -695,7 +695,7 @@ fn names_a_parameter(tables: &Tables, function: u32, parameter_index: u32) -> bo
 }
 
 /// A parameter index that names nothing would make the provenance pass fall
-/// back to "conflicting" for every allocator that flows through it, which
+/// back to `Conflicting` for every allocator that flows through it, which
 /// reads as a real finding rather than as a broken fact file.
 fn check_parameter_indices(tables: &Tables, violations: &mut Vec<Violation>) {
     let sources = &tables.allocator_sources;

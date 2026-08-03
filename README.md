@@ -9,13 +9,13 @@
 
 Zag is data-oriented and contains no `unsafe`. Facts about a Zig program are
 columns of `u32`, and every pass is a free function that reads columns and
-writes new ones. There are no methods, no trait objects, and no pointers, so
-the borrow checker has nothing to fight and `unsafe_code = "forbid"` costs
-nothing to hold.
+writes new ones. There are no methods, trait objects, or pointers, so the
+borrow checker has nothing to fight and `unsafe_code = "forbid"` costs nothing
+to hold.
 
 Zag is under construction. Everything described below runs and is covered by
-the test suite, but the Zig frontend does not exist yet, so the pipeline is fed
-by hand-built fact tables rather than by a real compilation.
+the test suite, but the Zig frontend does not exist yet, so hand-built fact
+tables stand in for a real compilation.
 
 ## Why not file by file
 
@@ -46,21 +46,21 @@ visible from the struct.
 
 Three passes run over the fact tables.
 
-The **call graph** is compressed sparse row over the call table, which gives
+The call graph is compressed sparse row over the call table, which gives
 transitive reachability. That is what connects a free site to the `deinit` that
 reaches it, however many hops away.
 
-**Allocator provenance** is a fixed point over call arguments on a four point
+Allocator provenance is a fixed point over call arguments on a four point
 lattice: unset, global, arena, conflicting. An allocator parameter has no
 concrete identity until some caller supplies one, which makes this a dataflow
 problem rather than a local one. Two callers passing different allocators
-resolve to conflicting, and that is a finding worth reading.
+resolve to conflicting.
 
-**Ownership classification** crosses free sites with assignment sources and the
+Ownership classification crosses free sites with assignment sources and the
 resolved allocator, and lands on owned, borrowed, static, arena, value, or
-unknown, each with a confidence. Unknown is a first class result. The analysis
-is allowed to be incomplete but never allowed to bluff, so a field it cannot
-decide becomes `Option<core::ptr::NonNull<T>>` with the reason recorded.
+unknown, each with a confidence. Unknown is a first class result, so a field
+the analysis cannot decide becomes `Option<core::ptr::NonNull<T>>` with the
+reason recorded.
 
 Struct lifetimes fall out of the field classifications. A struct with a
 borrowed field gets `<'a>`, one with an arena field gets `<'bump>`.
@@ -89,12 +89,11 @@ emitter got wrong fails CI rather than corrupting memory a year later.
 ## The Zig side
 
 The part that does not exist yet is the frontend, and the plan for it is to
-instrument rather than to reverse engineer. Zig's `Sema` already resolves every
-generic instantiation, every inferred error set, every comptime branch, and
-every type, then discards them. Vendoring the compiler and logging those
-decisions turns the hardest analyses in this project into a serialisation
-problem, and `InternPool` is already the structure of arrays this crate
-expects.
+instrument rather than to reverse engineer. Zig's `Sema` already resolves
+generic instantiations, inferred error sets, comptime branches, and types, then
+discards them. Vendoring the compiler and logging those decisions turns the
+hardest analyses in this project into a serialisation problem, and `InternPool`
+is already the structure of arrays this crate expects.
 
 That side stays deliberately small and free of analysis, because it is the part
 upstream Zig will keep breaking.
@@ -110,7 +109,7 @@ just check     # format, lint, and the whole suite
 ```
 
 `fixtures/example.zig` is the Zig the worked example stands for. Nothing reads
-it: `zag-facts` hand-builds the tables that source would yield, and the rest of
+it. `zag-facts` hand-builds the tables that source would yield, and the rest of
 the pipeline is real. Every ownership class the analysis can reach appears in
 it exactly once.
 

@@ -127,8 +127,8 @@ struct AssignmentFacts {
 }
 
 /// Deinit closures are computed on demand. Most structs never have a field
-/// freed anywhere, and computing a reachability vector per struct up front
-/// costs one bit table per struct for nothing.
+/// freed anywhere, so building one for every struct with a deinit allocates a
+/// reachability vector per struct that nothing reads.
 fn closure_for(
     tables: &Tables,
     graph: &CallGraph,

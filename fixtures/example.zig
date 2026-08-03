@@ -1,4 +1,4 @@
-// The Zig this fixture stands for. Nothing reads this file: the Zig frontend
+// The Zig this fixture stands for. Nothing reads this file. The Zig frontend
 // that would produce fact tables from it does not exist yet, so
 // zag-facts/src/fixture.rs hand-builds the tables this source would yield.
 // The two are kept in step by hand until the frontend lands.

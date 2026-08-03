@@ -23,8 +23,8 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # zag-verify compiles the checked in fixture output, so the layout
-      # assertions the emitter wrote are checked by the build itself. Running
-      # on three targets is what makes that worth doing.
+      # assertions the emitter wrote are checked by the build itself. A layout
+      # that only holds on one target fails on the other two.
       - run: cargo test --workspace
 
   fmt:

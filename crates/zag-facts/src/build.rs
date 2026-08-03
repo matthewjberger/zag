@@ -7,8 +7,8 @@ use crate::tables::{
 };
 
 /// Appends without looking for an existing copy. Use this where identifiers
-/// are written once and never compared, such as the emitted syntax tree: it
-/// keeps building linear where `intern` is quadratic in the table size.
+/// are written once and never compared, such as the emitted syntax tree, where
+/// `intern` would be quadratic in the number of identifiers written.
 pub fn push_string(strings: &mut Strings, text: &[u8]) -> StringId {
     if strings.offsets.is_empty() {
         strings.offsets.push(0);

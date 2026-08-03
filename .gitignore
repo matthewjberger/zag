@@ -1,7 +1,7 @@
 /target
 
-# Fact files are generated. `just fixture` writes this one from the fixture
-# tables in zag-facts, so the tree carries the source of truth and not the blob.
+# Generated. `just fixture` writes this one from the fixture tables in
+# zag-facts, which the tree carries instead.
 *.facts
 
 *.tmp
