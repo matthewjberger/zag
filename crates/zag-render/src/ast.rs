@@ -32,6 +32,8 @@ pub enum NodeKind {
     ExpressionTry = 21,
     TypeOption = 22,
     TypeArray = 23,
+    TypeResult = 24,
+    Discard = 25,
 }
 
 #[repr(u32)]
@@ -47,6 +49,10 @@ pub enum Lifetime {
 pub const STRUCT_FLAG_REPR_C: u32 = 1 << 0;
 pub const STRUCT_FLAG_BORROW_LIFETIME: u32 = 1 << 1;
 pub const STRUCT_FLAG_ARENA_LIFETIME: u32 = 1 << 2;
+
+/// The parameter is a receiver. Its text is the whole thing Rust writes, so it
+/// carries no type node of its own.
+pub const PARAMETER_FLAG_RECEIVER: u32 = 1 << 0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ast {

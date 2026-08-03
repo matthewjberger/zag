@@ -1,13 +1,13 @@
 use crate::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern,
     push_allocator_source, push_call, push_call_argument, push_field_assignment, push_integer_type,
-    push_memory_operation, push_opaque_type, push_pointer_type, push_slice_type, set_struct_deinit,
-    struct_type,
+    push_memory_operation, push_opaque_type, push_pointer_type, push_slice_type, push_void_type,
+    set_function_signature, set_struct_deinit, struct_type,
 };
 use crate::handles::{FunctionId, NO_INDEX, StructId};
 use crate::tables::{
     AllocatorSourceKind, AssignmentSource, MemoryOperationKind, PARAMETER_FLAG_ALLOCATOR,
-    PlaceKind, Tables, empty_tables,
+    PARAMETER_FLAG_MUTABLE, PlaceKind, Tables, empty_tables,
 };
 
 pub fn tables() -> Tables {
@@ -38,7 +38,13 @@ pub fn tables() -> Tables {
     declare_parameter(&mut tables, initialize, b"input", text, 0);
 
     let deinitialize = declare_function(&mut tables, b"deinit", counts);
-    declare_parameter(&mut tables, deinitialize, b"self", counts_pointer, 0);
+    declare_parameter(
+        &mut tables,
+        deinitialize,
+        b"self",
+        counts_pointer,
+        PARAMETER_FLAG_MUTABLE,
+    );
     declare_parameter(
         &mut tables,
         deinitialize,
@@ -49,7 +55,13 @@ pub fn tables() -> Tables {
     set_struct_deinit(&mut tables, counts, deinitialize);
 
     let release = declare_function(&mut tables, b"release", StructId(NO_INDEX));
-    declare_parameter(&mut tables, release, b"self", counts_pointer, 0);
+    declare_parameter(
+        &mut tables,
+        release,
+        b"self",
+        counts_pointer,
+        PARAMETER_FLAG_MUTABLE,
+    );
     declare_parameter(
         &mut tables,
         release,
@@ -59,6 +71,18 @@ pub fn tables() -> Tables {
     );
 
     let main = declare_function(&mut tables, b"main", StructId(NO_INDEX));
+
+    let void = push_void_type(&mut tables);
+    set_function_signature(
+        &mut tables,
+        initialize,
+        counts_type,
+        StructId(NO_INDEX),
+        true,
+    );
+    set_function_signature(&mut tables, deinitialize, void, StructId(NO_INDEX), false);
+    set_function_signature(&mut tables, release, void, StructId(NO_INDEX), false);
+    set_function_signature(&mut tables, main, void, StructId(NO_INDEX), true);
 
     let page = push_allocator_source(
         &mut tables,

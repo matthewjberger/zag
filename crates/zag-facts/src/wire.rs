@@ -221,6 +221,9 @@ fn encode_functions(out: &mut Vec<u8>, tables: &Tables) {
     write_u32_column(out, &raw_from(&functions.owner, |value| value.0));
     write_u32_column(out, &functions.parameter_start);
     write_u32_column(out, &functions.parameter_count);
+    write_u32_column(out, &raw_from(&functions.returns, |value| value.0));
+    write_u32_column(out, &raw_from(&functions.error_set, |value| value.0));
+    write_u32_column(out, &functions.flags);
 
     let parameters = &tables.parameters;
     write_u32_column(out, &raw_from(&parameters.owner, |value| value.0));
@@ -371,6 +374,15 @@ fn decode_functions(
         .collect();
     functions.parameter_start = read_u32_column(bytes, cursor)?;
     functions.parameter_count = read_u32_column(bytes, cursor)?;
+    functions.returns = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(TypeId)
+        .collect();
+    functions.error_set = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(StructId)
+        .collect();
+    functions.flags = read_u32_column(bytes, cursor)?;
 
     let parameters = &mut tables.parameters;
     parameters.owner = read_u32_column(bytes, cursor)?

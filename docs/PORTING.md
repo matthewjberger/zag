@@ -101,12 +101,26 @@ The report ends with what became of every function.
 |---|---|
 | `ported, as the constructor` | nothing, the body is written |
 | `disappears, Drop frees what it freed` | delete the Zig `deinit`, `Box` already does its job |
-| `still to write` | yours, following the rules below |
+| `ported, signature only, the body is still to write` | fill in the `todo!()`, the signature around it is settled |
+| `still to write, the port cannot spell what it gives back` | write the whole function, starting with what it returns |
 
 A `deinit` only disappears when every field it frees is one the analysis proved
 owned. A `deinit` that closes a handle, decrements a counter, or frees
-something it does not own reads as `still to write`, because `Drop` does not
-cover it.
+something it does not own keeps its own outcome, because `Drop` does not cover
+it. A helper the `deinit` calls disappears on the same grounds, since freeing
+fields `Drop` now frees leaves it with nothing to do.
+
+A signature is worth having on its own. It carries which parameters the port
+borrows and which it takes by value, what the function returns, and which error
+set it can fail with, and those are settled before anybody writes the body.
+The allocator parameter is not among them, because the port allocates through
+its own types.
+
+Two things stop a signature being written, and both are the port refusing to
+invent something. A `!T` infers its error set from the body, so the Zig named
+no error type and neither can the port. A return type that carries a lifetime
+needs that lifetime tied to a parameter, and an arena lifetime has no parameter
+to tie to once the allocator is gone.
 
 ## Types
 

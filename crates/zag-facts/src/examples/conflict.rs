@@ -1,7 +1,8 @@
 use crate::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern,
     push_allocator_source, push_call, push_call_argument, push_field_assignment, push_integer_type,
-    push_memory_operation, push_opaque_type, push_slice_type,
+    push_memory_operation, push_opaque_type, push_slice_type, push_void_type,
+    set_function_signature, struct_type,
 };
 use crate::handles::{FieldId, FunctionId, NO_INDEX, StructId};
 use crate::tables::{
@@ -45,6 +46,13 @@ pub fn tables() -> Tables {
     declare_parameter(&mut tables, from_arena, b"bytes", bytes, 0);
 
     let main = declare_function(&mut tables, b"main", StructId(NO_INDEX));
+
+    let cache_type = struct_type(&tables, cache);
+    let void = push_void_type(&mut tables);
+    for function in [make_cache, from_heap, from_arena] {
+        set_function_signature(&mut tables, function, cache_type, StructId(NO_INDEX), true);
+    }
+    set_function_signature(&mut tables, main, void, StructId(NO_INDEX), true);
 
     let page = push_allocator_source(
         &mut tables,

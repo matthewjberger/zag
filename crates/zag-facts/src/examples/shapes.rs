@@ -1,6 +1,7 @@
 use crate::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern, push_integer_type,
-    push_opaque_type, push_slice_type, push_void_type, set_struct_kind, struct_type,
+    push_opaque_type, push_slice_type, push_void_type, set_function_signature, set_struct_kind,
+    struct_type,
 };
 use crate::handles::{NO_INDEX, StructId};
 use crate::tables::{ContainerKind, Tables, empty_tables};
@@ -44,7 +45,12 @@ pub fn tables() -> Tables {
     declare_parameter(&mut tables, area, b"shape", shape_type, 0);
     let parse = declare_function(&mut tables, b"parse", StructId(NO_INDEX));
     declare_parameter(&mut tables, parse, b"text", text, 0);
-    declare_function(&mut tables, b"main", StructId(NO_INDEX));
+    let main = declare_function(&mut tables, b"main", StructId(NO_INDEX));
+
+    let colour_type = struct_type(&tables, colour);
+    set_function_signature(&mut tables, area, float, StructId(NO_INDEX), false);
+    set_function_signature(&mut tables, parse, colour_type, failure, true);
+    set_function_signature(&mut tables, main, void, StructId(NO_INDEX), true);
 
     tables
 }

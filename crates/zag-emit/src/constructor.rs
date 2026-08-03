@@ -247,8 +247,9 @@ pub fn writable_init(
     (fields > 0).then_some(function)
 }
 
-/// A constructor is written only when the Zig `init` belongs to the struct and
-/// sets every one of its fields to something writable.
+/// The `new` a struct gets, written only when the Zig `init` belongs to it and
+/// sets every one of its fields to something writable. The caller puts it in
+/// the struct's `impl` block alongside whatever else the port writes there.
 pub fn lower_constructor(
     ast: &mut Ast,
     tables: &Tables,
@@ -343,16 +344,13 @@ pub fn lower_constructor(
     ));
 
     let name = push_string(&mut ast.strings, b"new");
-    let method = push_node(ast, NodeKind::Function, name, absent(), count, 0, &children);
-    let text = name_of(tables, tables.structs.name.get(owner.0 as usize));
-    let owner_name = push_string(&mut ast.strings, &text);
     Some(push_node(
         ast,
-        NodeKind::Implementation,
-        owner_name,
+        NodeKind::Function,
+        name,
         absent(),
+        count,
         0,
-        0,
-        &[method],
+        &children,
     ))
 }

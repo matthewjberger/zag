@@ -2,12 +2,12 @@ use crate::build::{
     intern, push_allocator_source, push_call, push_call_argument, push_field,
     push_field_assignment, push_function, push_integer_type, push_memory_operation,
     push_opaque_type, push_parameter, push_pointer_type, push_slice_type, push_struct,
-    push_struct_type, set_struct_deinit,
+    push_struct_type, push_void_type, set_function_signature, set_struct_deinit,
 };
 use crate::handles::{FieldId, FunctionId, MemoryOperationId, NO_INDEX, StructId, TypeId};
 use crate::tables::{
     AllocatorSourceKind, AssignmentSource, MemoryOperationKind, PARAMETER_FLAG_ALLOCATOR,
-    PlaceKind, STRUCT_FLAG_EXTERN, Tables, empty_tables,
+    PARAMETER_FLAG_MUTABLE, PlaceKind, STRUCT_FLAG_EXTERN, Tables, empty_tables,
 };
 
 struct FixtureTypes {
@@ -134,6 +134,11 @@ fn push_plain_parameter(tables: &mut Tables, owner: FunctionId, name: &[u8], kin
     push_parameter(tables, owner, parameter_name, kind, 0);
 }
 
+fn push_receiver_parameter(tables: &mut Tables, owner: FunctionId, name: &[u8], kind: TypeId) {
+    let parameter_name = intern(&mut tables.strings, name);
+    push_parameter(tables, owner, parameter_name, kind, PARAMETER_FLAG_MUTABLE);
+}
+
 fn push_fixture_functions(
     tables: &mut Tables,
     types: &FixtureTypes,
@@ -146,13 +151,13 @@ fn push_fixture_functions(
 
     let name = intern(&mut tables.strings, b"deinit");
     let deinitialize = push_function(tables, name, structs.buffer);
-    push_plain_parameter(tables, deinitialize, b"self", types.pointer_to_buffer);
+    push_receiver_parameter(tables, deinitialize, b"self", types.pointer_to_buffer);
     push_allocator_parameter(tables, deinitialize, b"allocator", types.allocator);
     set_struct_deinit(tables, structs.buffer, deinitialize);
 
     let name = intern(&mut tables.strings, b"release");
     let release = push_function(tables, name, StructId(NO_INDEX));
-    push_plain_parameter(tables, release, b"self", types.pointer_to_buffer);
+    push_receiver_parameter(tables, release, b"self", types.pointer_to_buffer);
     push_allocator_parameter(tables, release, b"allocator", types.allocator);
 
     let name = intern(&mut tables.strings, b"makeBuffer");
@@ -171,6 +176,16 @@ fn push_fixture_functions(
     let name = intern(&mut tables.strings, b"makeView");
     let make_view = push_function(tables, name, StructId(NO_INDEX));
     push_plain_parameter(tables, make_view, b"bytes", types.slice_of_bytes);
+
+    let void = push_void_type(tables);
+    let no_set = StructId(NO_INDEX);
+    set_function_signature(tables, initialize, types.buffer, no_set, true);
+    set_function_signature(tables, deinitialize, void, no_set, false);
+    set_function_signature(tables, release, void, no_set, false);
+    set_function_signature(tables, make_buffer, types.buffer, no_set, true);
+    set_function_signature(tables, parse_node, types.node, no_set, true);
+    set_function_signature(tables, parse_tree, types.node, no_set, true);
+    set_function_signature(tables, make_view, types.view, no_set, false);
 
     FixtureFunctions {
         initialize,

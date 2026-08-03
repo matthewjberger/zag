@@ -2,14 +2,16 @@ use crate::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern,
     push_allocator_source, push_call, push_call_argument, push_expression,
     push_field_assignment_with, push_integer_type, push_memory_operation, push_opaque_type,
-    push_pointer_type, push_slice_type, push_string, set_struct_deinit, struct_type,
+    push_pointer_type, push_slice_type, push_string, push_void_type, set_function_signature,
+    set_struct_deinit, struct_type,
 };
 use crate::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, NO_INDEX, StringId, StructId, TypeId,
 };
 use crate::tables::{
     AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind,
-    PARAMETER_FLAG_ALLOCATOR, PlaceKind, STRUCT_FLAG_EXTERN, Tables, empty_tables,
+    PARAMETER_FLAG_ALLOCATOR, PARAMETER_FLAG_MUTABLE, PlaceKind, STRUCT_FLAG_EXTERN, Tables,
+    empty_tables,
 };
 
 pub fn tables() -> Tables {
@@ -50,7 +52,13 @@ pub fn tables() -> Tables {
     declare_parameter(&mut tables, initialize, b"body", payload, 0);
 
     let deinitialize = declare_function(&mut tables, b"deinit", packet);
-    declare_parameter(&mut tables, deinitialize, b"self", packet_pointer, 0);
+    declare_parameter(
+        &mut tables,
+        deinitialize,
+        b"self",
+        packet_pointer,
+        PARAMETER_FLAG_MUTABLE,
+    );
     declare_parameter(
         &mut tables,
         deinitialize,
@@ -61,6 +69,17 @@ pub fn tables() -> Tables {
     set_struct_deinit(&mut tables, packet, deinitialize);
 
     let main = declare_function(&mut tables, b"main", StructId(NO_INDEX));
+
+    let void = push_void_type(&mut tables);
+    set_function_signature(
+        &mut tables,
+        initialize,
+        packet_type,
+        StructId(NO_INDEX),
+        true,
+    );
+    set_function_signature(&mut tables, deinitialize, void, StructId(NO_INDEX), false);
+    set_function_signature(&mut tables, main, void, StructId(NO_INDEX), true);
 
     let page = push_allocator_source(
         &mut tables,

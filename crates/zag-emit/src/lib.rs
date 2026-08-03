@@ -1,4 +1,5 @@
 pub mod constructor;
+pub mod function;
 pub mod lower;
 pub mod report;
 

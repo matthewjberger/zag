@@ -77,6 +77,7 @@ fn render_item(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
         NodeKind::Struct => render_struct(out, ast, node),
         NodeKind::Enum => render_enum(out, ast, node),
         NodeKind::Implementation => render_implementation(out, ast, node),
+        NodeKind::Function => render_function(out, ast, node, 0),
         NodeKind::AssertSize => render_assertion(out, ast, node, b"size_of"),
         NodeKind::AssertAlignment => render_assertion(out, ast, node, b"align_of"),
         NodeKind::AssertOffset => render_offset_assertion(out, ast, node),
@@ -207,6 +208,18 @@ fn render_type(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
             out.extend_from_slice(b"]");
             Ok(())
         }
+        NodeKind::TypeResult => {
+            let children = node_children(ast, node);
+            if children.len() != 2 {
+                return Err(RenderError::MissingChild { node });
+            }
+            out.extend_from_slice(b"Result<");
+            render_type(out, ast, ast.children[children.start])?;
+            out.extend_from_slice(b", ");
+            render_type(out, ast, ast.children[children.start + 1])?;
+            out.extend_from_slice(b">");
+            Ok(())
+        }
         NodeKind::TypeOptionNonNull => {
             out.extend_from_slice(b"Option<core::ptr::NonNull<");
             render_type(out, ast, only_child(ast, node)?)?;
@@ -224,25 +237,35 @@ fn indent(out: &mut Vec<u8>, depth: usize) {
 }
 
 fn render_implementation(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
-    out.extend_from_slice(b"impl ");
+    let flags = ast.flags[node.0 as usize];
+    out.extend_from_slice(b"impl");
+    render_lifetime_parameters(out, flags);
+    out.push(b' ');
     out.extend_from_slice(text_of(ast, node));
+    render_lifetime_parameters(out, flags);
     out.extend_from_slice(b" {\n");
     for slot in node_children(ast, node) {
-        render_function(out, ast, ast.children[slot])?;
+        render_function(out, ast, ast.children[slot], 1)?;
     }
     out.extend_from_slice(b"}\n");
     Ok(())
 }
 
-fn render_function(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
+fn render_function(
+    out: &mut Vec<u8>,
+    ast: &Ast,
+    node: NodeId,
+    depth: usize,
+) -> Result<(), RenderError> {
     let children = node_children(ast, node);
     let parameters = ast.number[node.0 as usize] as usize;
-    if children.len() != parameters + 2 {
+    if children.len() < parameters + 2 {
         return Err(RenderError::MissingChild { node });
     }
-    indent(out, 1);
+    indent(out, depth);
     out.extend_from_slice(b"pub fn ");
     out.extend_from_slice(text_of(ast, node));
+    render_lifetime_parameters(out, ast.flags[node.0 as usize]);
     out.extend_from_slice(b"(");
     for index in 0..parameters {
         if index != 0 {
@@ -250,16 +273,37 @@ fn render_function(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), Ren
         }
         let parameter = ast.children[children.start + index];
         out.extend_from_slice(text_of(ast, parameter));
+        if ast.flags[parameter.0 as usize] & ast::PARAMETER_FLAG_RECEIVER != 0 {
+            continue;
+        }
         out.extend_from_slice(b": ");
         render_type(out, ast, only_child(ast, parameter)?)?;
     }
-    out.extend_from_slice(b") -> ");
-    render_type(out, ast, ast.children[children.start + parameters])?;
+    out.extend_from_slice(b")");
+    // Rust writes nothing where a function gives nothing back, and a written
+    // `-> ()` is what the linter asks to be deleted.
+    let mut returns = Vec::new();
+    render_type(&mut returns, ast, ast.children[children.start + parameters])?;
+    if returns != b"()" {
+        out.extend_from_slice(b" -> ");
+        out.extend_from_slice(&returns);
+    }
     out.extend_from_slice(b" {\n");
-    indent(out, 2);
-    render_expression(out, ast, ast.children[children.start + parameters + 1], 2)?;
-    out.extend_from_slice(b"\n");
-    indent(out, 1);
+    // Everything after the return type is a statement, and the last one is the
+    // value the function gives back.
+    for slot in children.start + parameters + 1..children.end {
+        let statement = ast.children[slot];
+        indent(out, depth + 1);
+        if kind_of(ast, statement)? == NodeKind::Discard {
+            out.extend_from_slice(b"let _ = ");
+            out.extend_from_slice(text_of(ast, statement));
+            out.extend_from_slice(b";\n");
+            continue;
+        }
+        render_expression(out, ast, statement, depth + 1)?;
+        out.extend_from_slice(b"\n");
+    }
+    indent(out, depth);
     out.extend_from_slice(b"}\n");
     Ok(())
 }

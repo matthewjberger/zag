@@ -195,6 +195,178 @@ fn an_array_of_arrays_nests() {
 }
 
 #[test]
+fn a_result_renders_what_it_gives_back_before_what_it_fails_with() {
+    assert_eq!(
+        render_one_type(|ast| {
+            let value = path(ast, b"Colour");
+            let failure = path(ast, b"ParseError");
+            push_node(
+                ast,
+                NodeKind::TypeResult,
+                absent(),
+                absent(),
+                0,
+                0,
+                &[value, failure],
+            )
+        }),
+        "Result<Colour, ParseError>"
+    );
+}
+
+#[test]
+fn a_result_missing_one_half_is_refused() {
+    let mut ast = empty_ast();
+    let value = path(&mut ast, b"Colour");
+    let kind = push_node(
+        &mut ast,
+        NodeKind::TypeResult,
+        absent(),
+        absent(),
+        0,
+        0,
+        &[value],
+    );
+    let member = field(&mut ast, b"value", kind);
+    let item = structure(&mut ast, b"Holder", 0, &[member]);
+    file(&mut ast, &[item]);
+    assert_eq!(
+        render(&ast),
+        Err(RenderError::MissingChild { node: kind }),
+        "a result with one half cannot be spelled"
+    );
+}
+
+#[test]
+fn a_function_body_renders_every_statement_in_order() {
+    let mut ast = empty_ast();
+    let kind = path(&mut ast, b"u32");
+    let name = intern(&mut ast.strings, b"text");
+    let parameter = push_node(&mut ast, NodeKind::Parameter, name, absent(), 0, 0, &[kind]);
+    let returns = path(&mut ast, b"u32");
+    let discarded = intern(&mut ast.strings, b"text");
+    let discard = push_node(&mut ast, NodeKind::Discard, discarded, absent(), 0, 0, &[]);
+    let body = intern(&mut ast.strings, b"todo!()");
+    let body = push_node(
+        &mut ast,
+        NodeKind::ExpressionLiteral,
+        body,
+        absent(),
+        0,
+        0,
+        &[],
+    );
+    let name = intern(&mut ast.strings, b"measure");
+    let function = push_node(
+        &mut ast,
+        NodeKind::Function,
+        name,
+        absent(),
+        1,
+        0,
+        &[parameter, returns, discard, body],
+    );
+    file(&mut ast, &[function]);
+    assert_eq!(
+        rendered(&ast),
+        "pub fn measure(text: u32) -> u32 {\n    let _ = text;\n    todo!()\n}\n"
+    );
+}
+
+#[test]
+fn a_receiver_renders_without_a_type_beside_it() {
+    let mut ast = empty_ast();
+    let name = intern(&mut ast.strings, b"&mut self");
+    let receiver = push_node(
+        &mut ast,
+        NodeKind::Parameter,
+        name,
+        absent(),
+        0,
+        zag_render::ast::PARAMETER_FLAG_RECEIVER,
+        &[],
+    );
+    let returns = path(&mut ast, b"u32");
+    let body = intern(&mut ast.strings, b"todo!()");
+    let body = push_node(
+        &mut ast,
+        NodeKind::ExpressionLiteral,
+        body,
+        absent(),
+        0,
+        0,
+        &[],
+    );
+    let name = intern(&mut ast.strings, b"length");
+    let function = push_node(
+        &mut ast,
+        NodeKind::Function,
+        name,
+        absent(),
+        1,
+        0,
+        &[receiver, returns, body],
+    );
+    let name = intern(&mut ast.strings, b"Holder");
+    let block = push_node(
+        &mut ast,
+        NodeKind::Implementation,
+        name,
+        absent(),
+        0,
+        0,
+        &[function],
+    );
+    file(&mut ast, &[block]);
+    assert_eq!(
+        rendered(&ast),
+        "impl Holder {\n    pub fn length(&mut self) -> u32 {\n        todo!()\n    }\n}\n"
+    );
+}
+
+#[test]
+fn an_implementation_for_a_borrowing_struct_declares_the_lifetime_on_both_sides() {
+    let mut ast = empty_ast();
+    let returns = path(&mut ast, b"u32");
+    let body = intern(&mut ast.strings, b"todo!()");
+    let body = push_node(
+        &mut ast,
+        NodeKind::ExpressionLiteral,
+        body,
+        absent(),
+        0,
+        0,
+        &[],
+    );
+    let name = intern(&mut ast.strings, b"length");
+    let function = push_node(
+        &mut ast,
+        NodeKind::Function,
+        name,
+        absent(),
+        0,
+        0,
+        &[returns, body],
+    );
+    let name = intern(&mut ast.strings, b"View");
+    let block = push_node(
+        &mut ast,
+        NodeKind::Implementation,
+        name,
+        absent(),
+        0,
+        STRUCT_FLAG_BORROW_LIFETIME,
+        &[function],
+    );
+    file(&mut ast, &[block]);
+    assert!(
+        rendered(&ast).starts_with("impl<'a> View<'a> {"),
+        "{}",
+        rendered(&ast)
+    );
+}
+
+#[test]
 fn each_lifetime_renders_its_own_name() {
     let cases = [
         (Lifetime::Borrow, "&'a [u8]"),

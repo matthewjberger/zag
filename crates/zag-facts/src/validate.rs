@@ -189,6 +189,27 @@ fn check_function_column_lengths(tables: &Tables, violations: &mut Vec<Violation
         count,
         functions.parameter_count.len(),
     );
+    expect_length(
+        violations,
+        "functions",
+        "returns",
+        count,
+        functions.returns.len(),
+    );
+    expect_length(
+        violations,
+        "functions",
+        "error_set",
+        count,
+        functions.error_set.len(),
+    );
+    expect_length(
+        violations,
+        "functions",
+        "flags",
+        count,
+        functions.flags.len(),
+    );
 
     let parameters = &tables.parameters;
     let count = parameter_count(parameters);
@@ -551,6 +572,24 @@ fn check_declaration_handles(tables: &Tables, violations: &mut Vec<Violation>, l
         "functions",
         "owner",
         &tables.functions.owner,
+        |value| value.0,
+        limits.structs,
+        true,
+    );
+    check_column(
+        violations,
+        "functions",
+        "returns",
+        &tables.functions.returns,
+        |value| value.0,
+        limits.types,
+        true,
+    );
+    check_column(
+        violations,
+        "functions",
+        "error_set",
+        &tables.functions.error_set,
         |value| value.0,
         limits.structs,
         true,

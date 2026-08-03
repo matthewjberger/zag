@@ -19,3 +19,13 @@ pub enum ParseError {
     Empty,
     TooLarge,
 }
+
+pub fn area(shape: Shape) -> f32 {
+    let _ = shape;
+    todo!()
+}
+
+pub fn parse(text: &[u8]) -> Result<Colour, ParseError> {
+    let _ = text;
+    todo!()
+}

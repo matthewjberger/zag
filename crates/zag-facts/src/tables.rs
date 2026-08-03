@@ -19,6 +19,11 @@ pub enum ContainerKind {
 }
 
 pub const PARAMETER_FLAG_ALLOCATOR: u32 = 1 << 0;
+/// The parameter is a `*T` the callee may write through. A `*const T` is not.
+pub const PARAMETER_FLAG_MUTABLE: u32 = 1 << 1;
+
+/// The Zig function returns an error union, so the port returns a `Result`.
+pub const FUNCTION_FLAG_FALLIBLE: u32 = 1 << 0;
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -113,6 +118,13 @@ pub struct Functions {
     pub owner: Vec<StructId>,
     pub parameter_start: Vec<u32>,
     pub parameter_count: Vec<u32>,
+    /// What the function returns once any error union is stripped off. Absent
+    /// where the frontend could not resolve it.
+    pub returns: Vec<TypeId>,
+    /// The error set the Zig named, where it named one. A `!T` infers its set
+    /// from the body and names nothing, which leaves this absent.
+    pub error_set: Vec<StructId>,
+    pub flags: Vec<u32>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]

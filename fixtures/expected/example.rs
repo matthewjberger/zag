@@ -28,3 +28,8 @@ pub struct View<'a> {
 pub struct Cache {
     pub entries: Option<core::ptr::NonNull<[u8]>>,
 }
+
+pub fn make_view<'a>(bytes: &'a [u8]) -> View<'a> {
+    let _ = bytes;
+    todo!()
+}

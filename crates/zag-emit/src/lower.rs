@@ -134,7 +134,7 @@ pub fn lower_type_body(
 /// lifetimes of every struct are settled before any field that mentions one is
 /// lowered. Indexed by type rather than by struct, which is how a field names
 /// what it points at.
-fn lifetimes_by_type(tables: &Tables, ownership: &Ownership) -> Vec<u32> {
+pub fn lifetimes_by_type(tables: &Tables, ownership: &Ownership) -> Vec<u32> {
     let mut carried = vec![0u32; tables.types.kind.len()];
     for index in 0..struct_count(&tables.structs) {
         let owner = StructId(index as u32);
@@ -208,6 +208,13 @@ fn reference(ast: &mut Ast, body: NodeId, lifetime: Lifetime) -> NodeId {
         lifetime as u32,
         &[body],
     )
+}
+
+/// The lifetimes a struct declares, which is what an `impl` block for it puts
+/// in scope for everything written inside.
+pub fn lifetimes_of(tables: &Tables, ownership: &Ownership, owner: StructId) -> u32 {
+    struct_flags(tables, ownership, owner)
+        & (STRUCT_FLAG_BORROW_LIFETIME | STRUCT_FLAG_ARENA_LIFETIME)
 }
 
 fn struct_flags(tables: &Tables, ownership: &Ownership, owner: StructId) -> u32 {
@@ -415,12 +422,50 @@ pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
         }
         items.push(lower_struct(&mut ast, tables, ownership, &lifetimes, owner));
         lower_layout_assertions(&mut ast, tables, owner, &mut items);
-        if let Some(implementation) =
-            crate::constructor::lower_constructor(&mut ast, tables, ownership, &lifetimes, owner)
-        {
-            items.push(implementation);
-        }
+        lower_implementation(&mut ast, tables, ownership, &lifetimes, owner, &mut items);
+    }
+    for signature in crate::function::signatures_for(&mut ast, tables, ownership, &lifetimes, None)
+    {
+        items.push(signature);
     }
     ast.root = push_node(&mut ast, NodeKind::File, absent(), absent(), 0, 0, &items);
     ast
+}
+
+/// Everything the port writes for one struct goes in one `impl` block, so a
+/// constructor and the signatures beside it do not each open their own.
+fn lower_implementation(
+    ast: &mut Ast,
+    tables: &Tables,
+    ownership: &Ownership,
+    lifetimes: &Lowering,
+    owner: StructId,
+    items: &mut Vec<NodeId>,
+) {
+    let mut methods: Vec<NodeId> =
+        crate::constructor::lower_constructor(ast, tables, ownership, lifetimes, owner)
+            .into_iter()
+            .collect();
+    methods.extend(crate::function::signatures_for(
+        ast,
+        tables,
+        ownership,
+        lifetimes,
+        Some(owner),
+    ));
+    if methods.is_empty() {
+        return;
+    }
+    let text = name_of(tables, tables.structs.name.get(owner.0 as usize));
+    let name = push_string(&mut ast.strings, &text);
+    let flags = lifetimes_of(tables, ownership, owner);
+    items.push(push_node(
+        ast,
+        NodeKind::Implementation,
+        name,
+        absent(),
+        0,
+        flags,
+        &methods,
+    ));
 }

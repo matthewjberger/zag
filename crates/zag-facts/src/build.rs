@@ -270,7 +270,34 @@ pub fn push_function(tables: &mut Tables, name: StringId, owner: StructId) -> Fu
     functions.owner.push(owner);
     functions.parameter_start.push(parameter_start);
     functions.parameter_count.push(0);
+    functions.returns.push(TypeId(crate::handles::NO_INDEX));
+    functions.error_set.push(StructId(crate::handles::NO_INDEX));
+    functions.flags.push(0);
     FunctionId(functions.name.len() as u32 - 1)
+}
+
+/// What the function gives back. A return type left unset means the frontend
+/// could not resolve one, and a function whose return type is unresolved gets
+/// no signature in the port.
+pub fn set_function_signature(
+    tables: &mut Tables,
+    function: FunctionId,
+    returns: TypeId,
+    error_set: StructId,
+    fallible: bool,
+) {
+    let index = function.0 as usize;
+    let functions = &mut tables.functions;
+    if index >= functions.name.len() {
+        return;
+    }
+    functions.returns[index] = returns;
+    functions.error_set[index] = error_set;
+    functions.flags[index] = if fallible {
+        crate::tables::FUNCTION_FLAG_FALLIBLE
+    } else {
+        0
+    };
 }
 
 pub fn push_parameter(

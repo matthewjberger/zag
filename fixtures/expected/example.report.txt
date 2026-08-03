@@ -47,10 +47,10 @@ Cache.entries
   evidence: no assignment to this field was found
 
 functions: 7
-  Buffer.init: still to write
+  Buffer.init: still to write, the port cannot spell what it gives back
   Buffer.deinit: disappears, Drop frees what it freed
-  release: still to write
-  makeBuffer: still to write
-  parseNode: still to write
-  parseTree: still to write
-  makeView: still to write
+  release: disappears, Drop frees what it freed
+  makeBuffer: still to write, the port cannot spell what it gives back
+  parseNode: still to write, the port cannot spell what it gives back
+  parseTree: still to write, the port cannot spell what it gives back
+  makeView: ported, signature only, the body is still to write

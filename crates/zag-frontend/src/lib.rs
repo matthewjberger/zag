@@ -6,14 +6,15 @@ use zag_facts::build::{
     push_array_type, push_call, push_call_argument, push_expression, push_field_assignment_with,
     push_integer_type, push_memory_operation, push_opaque_type, push_optional_type,
     push_pointer_type, push_slice_type, push_string, push_struct, push_struct_type,
-    set_struct_deinit, set_struct_kind,
+    set_function_signature, set_struct_deinit, set_struct_kind,
 };
 use zag_facts::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, NO_INDEX, StringId, StructId, TypeId,
 };
 use zag_facts::tables::{
     AllocatorSourceKind, AssignmentSource, ContainerKind, ExpressionKind, MemoryOperationKind,
-    PARAMETER_FLAG_ALLOCATOR, PlaceKind, STRUCT_FLAG_EXTERN, Tables, empty_tables,
+    PARAMETER_FLAG_ALLOCATOR, PARAMETER_FLAG_MUTABLE, PlaceKind, STRUCT_FLAG_EXTERN, Tables,
+    empty_tables,
 };
 
 const ALLOCATING: [&str; 6] = [
@@ -163,6 +164,40 @@ fn is_allocator(declared: &str) -> bool {
     declared.contains("Allocator")
 }
 
+/// A `*T` the callee may write through. A `*const T` gives back a shared
+/// reference instead, which is the difference between `&mut self` and `&self`.
+fn is_mutable_pointer(declared: &str) -> bool {
+    declared
+        .trim()
+        .strip_prefix('*')
+        .is_some_and(|rest| !rest.trim_start().starts_with("const "))
+}
+
+/// The return type, split from the error set the Zig wrote in front of it. A
+/// `!T` names no set, which leaves the function fallible with nothing the port
+/// can spell, and `Set!T` names one the port can use.
+fn declare_signature(
+    tables: &mut Tables,
+    resolver: &mut Resolver,
+    structs: &[(String, StructId)],
+    function: FunctionId,
+    declared: &str,
+) {
+    let declared = declared.trim();
+    let (failure, returns) = match declared.split_once('!') {
+        Some((failure, returns)) => (failure.trim(), returns.trim()),
+        None => ("", declared),
+    };
+    let fallible = declared.contains('!');
+    let error_set = structs
+        .iter()
+        .find(|(name, _)| name == last_segment(failure))
+        .map(|(_, owner)| *owner)
+        .unwrap_or(StructId(NO_INDEX));
+    let returns = resolve(tables, resolver, returns);
+    set_function_signature(tables, function, returns, error_set, fallible);
+}
+
 /// Follows one level of local indirection, which is what makes a field set
 /// from a local that a call filled read as the call that filled it.
 fn through_locals<'a>(function: &'a Function, text: &'a str) -> &'a str {
@@ -273,13 +308,16 @@ fn declare_functions(
         let handle = declare_function(tables, function.name.as_bytes(), owner);
         for parameter in &function.parameters {
             let kind = resolve(tables, resolver, &parameter.declared);
-            let flags = if is_allocator(&parameter.declared) {
-                PARAMETER_FLAG_ALLOCATOR
-            } else {
-                0
-            };
+            let mut flags = 0;
+            if is_allocator(&parameter.declared) {
+                flags |= PARAMETER_FLAG_ALLOCATOR;
+            }
+            if is_mutable_pointer(&parameter.declared) {
+                flags |= PARAMETER_FLAG_MUTABLE;
+            }
             declare_parameter(tables, handle, parameter.name.as_bytes(), kind, flags);
         }
+        declare_signature(tables, resolver, structs, handle, &function.returns);
         if function.name == "deinit" && owner.0 != NO_INDEX {
             set_struct_deinit(tables, owner, handle);
         }

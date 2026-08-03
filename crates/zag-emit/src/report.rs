@@ -2,7 +2,7 @@ use zag_analysis::Analysis;
 use zag_analysis::ownership::{
     Confidence, EvidenceKind, Ownership, OwnershipClass, field_evidence,
 };
-use zag_facts::tables::{Tables, field_count, string_bytes};
+use zag_facts::tables::{MemoryOperationKind, Tables, field_count, string_bytes};
 use zag_facts::{FieldId, FunctionId, NO_INDEX};
 
 fn class_text(class: OwnershipClass) -> &'static [u8] {
@@ -108,6 +108,7 @@ fn write_field(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership, row: u
 pub enum Disposition {
     Constructor,
     SubsumedByDrop,
+    Signature,
     NotPorted,
 }
 
@@ -122,7 +123,11 @@ fn owner_of(tables: &Tables, function: FunctionId) -> Option<zag_facts::StructId
 
 /// A deinit disappears when every field it frees is one `Box` already drops.
 /// A deinit that does anything else has to be read by a person.
-fn subsumed_by_drop(tables: &Tables, ownership: &Ownership, function: FunctionId) -> bool {
+fn declared_deinit_disappears(
+    tables: &Tables,
+    ownership: &Ownership,
+    function: FunctionId,
+) -> bool {
     let Some(owner) = owner_of(tables, function) else {
         return false;
     };
@@ -145,14 +150,53 @@ fn subsumed_by_drop(tables: &Tables, ownership: &Ownership, function: FunctionId
     freed > 0
 }
 
-pub fn disposition(tables: &Tables, ownership: &Ownership, function: FunctionId) -> Disposition {
+/// A helper the deinit calls disappears on the same grounds the deinit does.
+/// Its whole effect is to free fields `Drop` now frees, so writing it out
+/// would leave a function with nothing left to do.
+fn frees_and_nothing_else(tables: &Tables, ownership: &Ownership, function: FunctionId) -> bool {
+    if tables.field_assignments.function.contains(&function) {
+        return false;
+    }
+    let operations = &tables.memory_operations;
+    let mut freed = 0;
+    for row in 0..zag_facts::tables::memory_operation_count(operations) {
+        if operations.function.get(row).copied() != Some(function) {
+            continue;
+        }
+        if operations.kind.get(row) != Some(&MemoryOperationKind::Free) {
+            return false;
+        }
+        let field = operations
+            .place_field
+            .get(row)
+            .copied()
+            .unwrap_or(FieldId(NO_INDEX));
+        if ownership.class.get(field.0 as usize) != Some(&OwnershipClass::Owned) {
+            return false;
+        }
+        freed += 1;
+    }
+    freed > 0
+}
+
+pub fn disposition(
+    tables: &Tables,
+    ownership: &Ownership,
+    lifetimes: &crate::lower::Lowering,
+    function: FunctionId,
+) -> Disposition {
     if let Some(owner) = owner_of(tables, function)
         && crate::constructor::writable_init(tables, ownership, owner) == Some(function)
     {
         return Disposition::Constructor;
     }
-    if subsumed_by_drop(tables, ownership, function) {
+    if declared_deinit_disappears(tables, ownership, function)
+        || frees_and_nothing_else(tables, ownership, function)
+    {
         return Disposition::SubsumedByDrop;
+    }
+    if crate::function::writes_a_signature(tables, ownership, lifetimes, function) {
+        return Disposition::Signature;
     }
     Disposition::NotPorted
 }
@@ -162,6 +206,7 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
     if count == 0 {
         return;
     }
+    let lifetimes = crate::lower::lifetimes_by_type(tables, ownership);
     out.push(b'\n');
     write_line(out, &[b"functions: ", count.to_string().as_bytes()]);
     for index in 0..count {
@@ -176,10 +221,11 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
             .and_then(|owner| tables.structs.name.get(owner.0 as usize))
             .map(|name| string_bytes(&tables.strings, *name))
             .unwrap_or(b"");
-        let outcome: &[u8] = match disposition(tables, ownership, handle) {
+        let outcome: &[u8] = match disposition(tables, ownership, &lifetimes, handle) {
             Disposition::Constructor => b"ported, as the constructor",
             Disposition::SubsumedByDrop => b"disappears, Drop frees what it freed",
-            Disposition::NotPorted => b"still to write",
+            Disposition::Signature => b"ported, signature only, the body is still to write",
+            Disposition::NotPorted => b"still to write, the port cannot spell what it gives back",
         };
         if owner.is_empty() {
             write_line(out, &[b"  ", name, b": ", outcome]);

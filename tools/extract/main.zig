@@ -209,10 +209,17 @@ pub fn main() !void {
     for (functions.items) |function| {
         const owner = if (function.owner) |index| containers.items[index].name else "-";
         const proto = tree.fullFnProto(&buffer, function.node).?;
-        const returns = if (proto.ast.return_type.unwrap()) |expression|
-            try collapse(arena, tree.getNodeSource(expression))
-        else
-            "-";
+        // A named error set is part of the return type expression, but the `!`
+        // of an inferred one is a token in front of it, so it has to be put
+        // back or a fallible function reads as one that cannot fail.
+        const returns = if (proto.ast.return_type.unwrap()) |expression| blk: {
+            const text = try collapse(arena, tree.getNodeSource(expression));
+            const first = tree.firstToken(expression);
+            if (first > 0 and tree.tokenTag(first - 1) == .bang) {
+                break :blk try std.fmt.allocPrint(arena, "!{s}", .{text});
+            }
+            break :blk text;
+        } else "-";
         std.debug.print("function {s} owner={s} returns={s}\n", .{ function.name, owner, returns });
         var iterator = proto.iterate(&tree);
         var index: usize = 0;

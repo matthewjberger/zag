@@ -9,7 +9,7 @@ Cache.entries
   evidence: allocator does not resolve to one allocator
 
 functions: 4
-  makeCache: still to write
-  fromHeap: still to write
-  fromArena: still to write
-  main: still to write
+  makeCache: still to write, the port cannot spell what it gives back
+  fromHeap: still to write, the port cannot spell what it gives back
+  fromArena: still to write, the port cannot spell what it gives back
+  main: still to write, the port cannot spell what it gives back

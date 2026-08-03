@@ -284,39 +284,51 @@ fn every_disposition() -> Vec<zag_emit::report::Disposition> {
     let all = vec![
         Disposition::Constructor,
         Disposition::SubsumedByDrop,
+        Disposition::Signature,
         Disposition::NotPorted,
     ];
     for outcome in &all {
         match outcome {
-            Disposition::Constructor | Disposition::SubsumedByDrop | Disposition::NotPorted => {}
+            Disposition::Constructor
+            | Disposition::SubsumedByDrop
+            | Disposition::Signature
+            | Disposition::NotPorted => {}
         }
     }
     all
 }
 
-/// netpacket reaches all three outcomes, so the wording is read out of a real
-/// report rather than repeated here where it could drift from the code.
+/// The wording is read out of real reports rather than repeated here, where it
+/// could drift from the code. Between them the examples reach every outcome,
+/// and the guide has to explain each one it finds.
 #[test]
 fn the_guide_explains_every_outcome_a_function_can_reach() {
     let guide = porting_guide();
-    let tables = zag_facts::examples::tables_for("netpacket").expect("registered");
-    let analysis = zag_analysis::analyze(&tables);
-    let report = String::from_utf8(render_report(&tables, &analysis)).expect("text");
-    let outcomes: Vec<&str> = report
-        .lines()
-        .skip_while(|line| !line.starts_with("functions:"))
-        .skip(1)
-        .filter_map(|line| line.rsplit_once(": "))
-        .map(|(_, outcome)| outcome)
-        .collect();
+    let mut seen: Vec<String> = Vec::new();
+    for name in zag_facts::examples::NAMES {
+        let tables = zag_facts::examples::tables_for(name).expect("registered");
+        let analysis = zag_analysis::analyze(&tables);
+        let report = String::from_utf8(render_report(&tables, &analysis)).expect("text");
+        for outcome in report
+            .lines()
+            .skip_while(|line| !line.starts_with("functions:"))
+            .skip(1)
+            .filter_map(|line| line.rsplit_once(": "))
+            .map(|(_, outcome)| outcome)
+        {
+            if !seen.iter().any(|entry| entry == outcome) {
+                seen.push(outcome.to_string());
+            }
+        }
+    }
     assert_eq!(
-        outcomes.len(),
+        seen.len(),
         every_disposition().len(),
-        "netpacket should reach every outcome exactly once: {report}"
+        "the examples between them should reach every outcome: {seen:?}"
     );
-    for outcome in outcomes {
+    for outcome in &seen {
         assert!(
-            guide.contains(outcome),
+            guide.contains(outcome.as_str()),
             "docs/PORTING.md does not explain the outcome {outcome:?}"
         );
     }
