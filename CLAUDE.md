@@ -44,12 +44,18 @@ Dependencies point one way. `zag-facts` and `zag-render` are leaves.
 integration layer over unit tests that cover each pass alone. `zag-verify`
 compiles every port they produce, so the layout assertions run in the build.
 
-`tools/reflect` asks the compiler what an example actually declares, and
-`crates/zag/tests/reflection.rs` holds the tables to that answer: structs,
-layout, field order, offsets, and public function arity. Never hand-write an
-offset. Read it off `just reflect <name>`, because Zig reorders an `auto`
-layout. The dataflow in the tables, which call allocates what and which
-function frees it, is out of reflection's reach and stays hand supplied.
+`tools/reflect` asks the compiler what an example declares and
+`crates/zag/tests/reflection.rs` holds the tables to it: structs, layout, field
+order, offsets, and public function arity. It is analysed, never linked, so it
+works wherever zig can compile. Never hand-write an offset. Read it off
+`just reflect <name>`, because Zig reorders an `auto` layout.
+
+`tools/extract` parses an example and `crates/zag/tests/extraction.rs` holds
+the tables to the dataflow: functions including private ones, parameter names,
+call edges, memory operations, and field assignments. It reads syntax, so it
+recognises `x.dupe(...)` by spelling rather than by resolving `x`. A table
+naming the wrong allocator still passes, and closing that is the frontend's
+job. It has to link, so it skips itself where zig cannot, and CI runs it.
 
 ## Working here
 

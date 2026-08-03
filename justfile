@@ -73,6 +73,11 @@ examples:
 reflect name:
     -zig build-obj -fno-emit-bin --dep target -Mroot=tools/reflect/main.zig -Mtarget=examples/{{name}}/src/main.zig
 
+# Prints the dataflow the parser found in one example, which is the other half
+# of what the hand-built fact tables are checked against. Needs zig on PATH
+extract name:
+    zig run tools/extract/main.zig -- examples/{{name}}/src/main.zig
+
 # Builds and runs every example Zig program. Needs zig on PATH
 [windows]
 examples-zig:

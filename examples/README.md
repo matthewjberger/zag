@@ -22,17 +22,27 @@ The Zig frontend does not exist yet, so the fact tables each program would
 produce are built by hand in `crates/zag-facts/src/examples/`, and the rest of
 the pipeline is real.
 
-Those tables are not taken on trust. `tools/reflect` imports an example and
-asks the compiler what it resolved, and the tests compare the answer against
-the tables: every struct, its layout, every field in order with its offset,
-and every public function with its parameter count. A table that drifts from
-the program it claims to describe fails there. Run it by hand with
-`just reflect netpacket`.
+Those tables are not taken on trust. Two tools read the programs and the tests
+hold the tables to what they find.
 
-What reflection cannot reach is the dataflow, which call allocates what and
-which function frees it. That part is still hand supplied, and it is exactly
-the part that needs the compiler's semantic analysis rather than its type
-information.
+`tools/reflect` imports an example and asks the compiler what it resolved:
+every struct, its layout, every field in order with its offset, and every
+public function with its parameter count. It is analysed and never linked, so
+the report arrives through `@compileError` and no platform's libc is involved.
+Run it with `just reflect netpacket`.
+
+`tools/extract` parses an example with the compiler's own parser and reports
+the dataflow: which function calls which, which call allocates or frees, and
+what each struct literal puts in each field. It sees private declarations,
+which reflection cannot, so the function check runs both ways. Run it with
+`just extract conflict`.
+
+Between them, every function, parameter, call, memory operation, and field
+assignment in the tables is checked against the program. What is left is the
+part that needs types to decide: `tools/extract` recognises `x.dupe(...)` as an
+allocation because of how it is spelled, not because it resolved `x` to an
+allocator, so a table naming the wrong allocator still passes. Resolving that
+is what the Sema frontend is for.
 
 ```bash
 zag examples                                          # what is available
