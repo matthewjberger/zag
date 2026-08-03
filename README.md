@@ -25,26 +25,56 @@ A Rust toolchain and [`just`](https://github.com/casey/just).
 git clone https://github.com/matthewjberger/zag
 cd zag
 
-just fixture   # port the worked example
-just report    # show what the analysis decided, and why
-just check     # format, lint, and the whole suite
+just names            # the programs that can be ported
+just port wordcount   # port one, and print the Rust and the report
+just check            # format, lint, and the whole suite
 ```
 
-`just fixture` writes `target/example.rs` and `target/example.report.txt`.
-Run `just` with no arguments to list every recipe.
+`just port` writes into `target/`, so reading a port never disturbs what the
+tests compare against. Run `just` with no arguments to list every recipe.
 
 [docs/PORTING.md](docs/PORTING.md) is how to read that report, and the rules
 for the parts zag does not decide, such as function bodies and comptime.
 
-[examples/](examples) holds small Zig programs that build and run on their own,
-one per analysis outcome. `cd examples/wordcount && zig build run` runs that
-one, and `just examples` ports all of them. Each carries the port it should
-produce, so the suite fails when the emitter changes what it writes.
+## The example programs
 
-`fixtures/example.zig` is the Zig the worked example stands for. Nothing reads
-it. `zag-facts` hand-builds the tables that source would yield, and the rest of
-the pipeline is real. Every ownership class the analysis can reach appears in
-it exactly once.
+[examples/](examples) is a directory of Zig projects, one per analysis outcome.
+Each is a whole project with its own `build.zig`, so it builds and runs without
+anything this repository provides:
+
+```bash
+cd examples/wordcount && zig build run
+```
+
+`wordcount` is owned memory whose free is a call away from `deinit`.
+`tokenizer` separates borrowed, arena, and static lifetimes inside one struct.
+`netpacket` is an `extern struct` whose layout the port has to preserve.
+`conflict` hands one allocator parameter a heap from one caller and an arena
+from another, so it ports to nothing usable, which is the finding rather than a
+failure. [examples/README.md](examples/README.md) covers each in full.
+
+## How the tool is validated
+
+Those programs are how zag is checked, and the chain runs from real Zig to
+compiled Rust with a compiler at both ends.
+
+`zig build` proves each example is a real program rather than a snippet shaped
+to suit the analysis. `tools/reflect` then asks the compiler what that program
+declares, and `tools/extract` parses it for the dataflow, so every struct,
+layout, field offset, function, parameter, call edge, memory operation, and
+field assignment in the fact tables is held to what the compiler found. The
+pipeline ports the result, and `rustc` compiles the port with constants
+evaluated, which is what turns the layout assertions the emitter wrote into
+part of the check. Finally the port is compared byte for byte against the
+output checked in beside the program.
+
+Two negative controls keep the last step honest. One flips a layout assertion
+and requires the build to fail, and one feeds `rustc` a type that does not
+exist. A check that only ever passes says nothing about what it checks.
+
+`fixtures/example.zig` is a fifth case that is not a runnable project. It
+exists to reach every ownership class in one program and is ported by
+`just port fixture`.
 
 ## Why not file by file
 
@@ -142,8 +172,12 @@ checks, so property tests feed the validator and the passes damaged tables and
 arbitrary bytes.
 
 The wire format, the provenance lattice, and the repair engine carry property
-tests of their own. Pipeline output is compared byte for byte against
-`fixtures/expected`, which `just regenerate` updates deliberately.
+tests of their own.
+
+Above those sits the example layer described earlier, which is the part that
+checks a whole program goes in one end and a port comes out the other.
+`just regenerate` updates the checked in output deliberately, so a change to
+the emitter arrives as a diff somebody has to read.
 
 ## License
 
