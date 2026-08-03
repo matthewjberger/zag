@@ -7,3 +7,9 @@ Cache.entries
   confidence: low
   evidence: assigned from an allocation (makeCache)
   evidence: allocator does not resolve to one allocator
+
+functions: 4
+  makeCache: still to write
+  fromHeap: still to write
+  fromArena: still to write
+  main: still to write

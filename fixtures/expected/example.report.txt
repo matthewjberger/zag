@@ -45,3 +45,12 @@ Cache.entries
   class: unknown
   confidence: low
   evidence: no assignment to this field was found
+
+functions: 7
+  Buffer.init: still to write
+  Buffer.deinit: disappears, Drop frees what it freed
+  release: still to write
+  makeBuffer: still to write
+  parseNode: still to write
+  parseTree: still to write
+  makeView: still to write

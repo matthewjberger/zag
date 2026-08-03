@@ -41,3 +41,8 @@ ParseError.Empty
 ParseError.TooLarge
   class: value
   confidence: high
+
+functions: 3
+  area: still to write
+  parse: still to write
+  main: still to write

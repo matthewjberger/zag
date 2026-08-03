@@ -179,6 +179,35 @@ fn assignment_for(tables: &Tables, function: FunctionId, field: FieldId) -> Opti
         .filter(|expression| expression.0 != NO_INDEX)
 }
 
+/// The Zig `init` a constructor can be written from, which is the one that
+/// belongs to the struct and sets every field to something writable. The
+/// report asks the same question to say what became of each function.
+pub fn writable_init(
+    tables: &Tables,
+    ownership: &Ownership,
+    owner: StructId,
+) -> Option<FunctionId> {
+    let function = (0..function_count(&tables.functions))
+        .map(|index| FunctionId(index as u32))
+        .find(|handle| {
+            tables.functions.owner.get(handle.0 as usize) == Some(&owner)
+                && string_bytes(&tables.strings, tables.functions.name[handle.0 as usize])
+                    == b"init"
+        })?;
+    let mut fields = 0;
+    for row in struct_fields(&tables.structs, owner) {
+        let expression = assignment_for(tables, function, FieldId(row as u32))?;
+        if !is_writable(tables, expression) {
+            return None;
+        }
+        if ownership.class.get(row).copied() == Some(OwnershipClass::Unknown) {
+            return None;
+        }
+        fields += 1;
+    }
+    (fields > 0).then_some(function)
+}
+
 /// A constructor is written only when the Zig `init` belongs to the struct and
 /// sets every one of its fields to something writable.
 pub fn lower_constructor(
@@ -188,24 +217,12 @@ pub fn lower_constructor(
     lowering: &Lowering,
     owner: StructId,
 ) -> Option<NodeId> {
-    let function = (0..function_count(&tables.functions))
-        .map(|index| FunctionId(index as u32))
-        .find(|handle| {
-            tables.functions.owner[handle.0 as usize] == owner
-                && string_bytes(&tables.strings, tables.functions.name[handle.0 as usize])
-                    == b"init"
-        })?;
+    let function = writable_init(tables, ownership, owner)?;
 
     let mut values = Vec::new();
     for row in struct_fields(&tables.structs, owner) {
         let field = FieldId(row as u32);
         let expression = assignment_for(tables, function, field)?;
-        if !is_writable(tables, expression) {
-            return None;
-        }
-        if ownership.class.get(row).copied() == Some(OwnershipClass::Unknown) {
-            return None;
-        }
         let value = lower_expression(ast, tables, function, expression);
         let text = name_of(tables, tables.fields.name.get(row));
         let name = push_string(&mut ast.strings, &text);

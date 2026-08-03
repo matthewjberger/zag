@@ -27,3 +27,7 @@ Document.separators
   class: static
   confidence: high
   evidence: assigned from a static literal (parse)
+
+functions: 2
+  parse: still to write
+  main: still to write

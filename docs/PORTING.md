@@ -93,6 +93,21 @@ A `warning:` line above the fields means allocator provenance did not settle.
 Every allocator below it is understated, so treat the whole report as
 provisional until that is fixed.
 
+### Functions
+
+The report ends with what became of every function.
+
+| outcome | what to do |
+|---|---|
+| `ported, as the constructor` | nothing, the body is written |
+| `disappears, Drop frees what it freed` | delete the Zig `deinit`, `Box` already does its job |
+| `still to write` | yours, following the rules below |
+
+A `deinit` only disappears when every field it frees is one the analysis proved
+owned. A `deinit` that closes a handle, decrements a counter, or frees
+something it does not own reads as `still to write`, because `Drop` does not
+cover it.
+
 ## Types
 
 The type a field gets is its Zig type crossed with its ownership class.

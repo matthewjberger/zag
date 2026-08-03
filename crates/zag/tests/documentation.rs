@@ -277,6 +277,51 @@ fn the_readme_shows_layout_assertions_the_emitter_actually_writes() {
     }
 }
 
+/// The match proves the list is complete, so a new outcome stops this file
+/// compiling until the guide explains it.
+fn every_disposition() -> Vec<zag_emit::report::Disposition> {
+    use zag_emit::report::Disposition;
+    let all = vec![
+        Disposition::Constructor,
+        Disposition::SubsumedByDrop,
+        Disposition::NotPorted,
+    ];
+    for outcome in &all {
+        match outcome {
+            Disposition::Constructor | Disposition::SubsumedByDrop | Disposition::NotPorted => {}
+        }
+    }
+    all
+}
+
+/// netpacket reaches all three outcomes, so the wording is read out of a real
+/// report rather than repeated here where it could drift from the code.
+#[test]
+fn the_guide_explains_every_outcome_a_function_can_reach() {
+    let guide = porting_guide();
+    let tables = zag_facts::examples::tables_for("netpacket").expect("registered");
+    let analysis = zag_analysis::analyze(&tables);
+    let report = String::from_utf8(render_report(&tables, &analysis)).expect("text");
+    let outcomes: Vec<&str> = report
+        .lines()
+        .skip_while(|line| !line.starts_with("functions:"))
+        .skip(1)
+        .filter_map(|line| line.rsplit_once(": "))
+        .map(|(_, outcome)| outcome)
+        .collect();
+    assert_eq!(
+        outcomes.len(),
+        every_disposition().len(),
+        "netpacket should reach every outcome exactly once: {report}"
+    );
+    for outcome in outcomes {
+        assert!(
+            guide.contains(outcome),
+            "docs/PORTING.md does not explain the outcome {outcome:?}"
+        );
+    }
+}
+
 #[test]
 fn the_readme_points_at_the_guide() {
     let readme = std::fs::read_to_string(workspace_root().join("README.md"))

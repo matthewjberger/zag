@@ -101,6 +101,94 @@ fn write_field(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership, row: u
     }
 }
 
+/// What became of a Zig function. A reader needs this as much as the field
+/// classes, because it is the difference between work already done, work that
+/// disappears, and work still to do.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Disposition {
+    Constructor,
+    SubsumedByDrop,
+    NotPorted,
+}
+
+fn owner_of(tables: &Tables, function: FunctionId) -> Option<zag_facts::StructId> {
+    tables
+        .functions
+        .owner
+        .get(function.0 as usize)
+        .copied()
+        .filter(|owner| owner.0 != NO_INDEX)
+}
+
+/// A deinit disappears when every field it frees is one `Box` already drops.
+/// A deinit that does anything else has to be read by a person.
+fn subsumed_by_drop(tables: &Tables, ownership: &Ownership, function: FunctionId) -> bool {
+    let Some(owner) = owner_of(tables, function) else {
+        return false;
+    };
+    if tables.structs.deinit.get(owner.0 as usize).copied() != Some(function) {
+        return false;
+    }
+    let mut freed = 0;
+    for row in zag_facts::tables::struct_fields(&tables.structs, owner) {
+        let frees = field_evidence(ownership, FieldId(row as u32)).any(|slot| {
+            ownership.evidence_kind.get(slot) == Some(&EvidenceKind::FreedInDeinitClosure)
+        });
+        if !frees {
+            continue;
+        }
+        freed += 1;
+        if ownership.class.get(row) != Some(&OwnershipClass::Owned) {
+            return false;
+        }
+    }
+    freed > 0
+}
+
+pub fn disposition(tables: &Tables, ownership: &Ownership, function: FunctionId) -> Disposition {
+    if let Some(owner) = owner_of(tables, function)
+        && crate::constructor::writable_init(tables, ownership, owner) == Some(function)
+    {
+        return Disposition::Constructor;
+    }
+    if subsumed_by_drop(tables, ownership, function) {
+        return Disposition::SubsumedByDrop;
+    }
+    Disposition::NotPorted
+}
+
+fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
+    let count = zag_facts::tables::function_count(&tables.functions);
+    if count == 0 {
+        return;
+    }
+    out.push(b'\n');
+    write_line(out, &[b"functions: ", count.to_string().as_bytes()]);
+    for index in 0..count {
+        let handle = FunctionId(index as u32);
+        let name = tables
+            .functions
+            .name
+            .get(index)
+            .map(|name| string_bytes(&tables.strings, *name))
+            .unwrap_or(b"");
+        let owner = owner_of(tables, handle)
+            .and_then(|owner| tables.structs.name.get(owner.0 as usize))
+            .map(|name| string_bytes(&tables.strings, *name))
+            .unwrap_or(b"");
+        let outcome: &[u8] = match disposition(tables, ownership, handle) {
+            Disposition::Constructor => b"ported, as the constructor",
+            Disposition::SubsumedByDrop => b"disappears, Drop frees what it freed",
+            Disposition::NotPorted => b"still to write",
+        };
+        if owner.is_empty() {
+            write_line(out, &[b"  ", name, b": ", outcome]);
+        } else {
+            write_line(out, &[b"  ", owner, b".", name, b": ", outcome]);
+        }
+    }
+}
+
 pub fn render_report(tables: &Tables, analysis: &Analysis) -> Vec<u8> {
     let mut out = Vec::new();
     write_line(&mut out, &[b"zag ownership report"]);
@@ -120,5 +208,6 @@ pub fn render_report(tables: &Tables, analysis: &Analysis) -> Vec<u8> {
     for row in 0..fields {
         write_field(&mut out, tables, &analysis.ownership, row);
     }
+    write_functions(&mut out, tables, &analysis.ownership);
     out
 }

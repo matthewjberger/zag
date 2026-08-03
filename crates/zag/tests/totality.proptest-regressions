@@ -6,3 +6,5 @@
 # everyone who runs the test benefits from these saved cases.
 cc 7cdeacab6d1f11eefce8d0cd84cfb295285dcaf0c01b9a0c4d177d30f3c1de82 # shrinks to column = 0, keep = 0
 cc 0a695b91486f09ba0d2cbf3158bb65c02e774cd913d1590d7724a390a7e1b9c1 # shrinks to first = 0, second = 8, value = 0, keep = 0
+cc f923a9cdfe7095e70bd892c1ed4c5f06270161b5bd1f1523be53ae9e037b3a6b # shrinks to column = 2, keep = 0
+cc 8416aca517423a791428c1cb0f1b066300d7f4601d7508b9f0ff2e382b9f7123 # shrinks to first = 0, second = 2, value = 0, keep = 0

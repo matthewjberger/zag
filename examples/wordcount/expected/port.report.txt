@@ -16,3 +16,9 @@ Counts.words
 Counts.lines
   class: value
   confidence: high
+
+functions: 4
+  Counts.init: still to write
+  Counts.deinit: disappears, Drop frees what it freed
+  release: still to write
+  main: still to write
