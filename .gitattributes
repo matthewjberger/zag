@@ -1,0 +1,4 @@
+# rustfmt.toml pins newline_style to Unix, so the working tree has to stay LF
+# on every host. Without this, core.autocrlf checks the tree out with CRLF on
+# Windows and `cargo fmt --check` reports every file in the repository.
+* text=auto eol=lf
