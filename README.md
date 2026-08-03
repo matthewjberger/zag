@@ -33,6 +33,9 @@ just check     # format, lint, and the whole suite
 `just fixture` writes `target/example.rs` and `target/example.report.txt`.
 Run `just` with no arguments to list every recipe.
 
+[docs/PORTING.md](docs/PORTING.md) is how to read that report, and the rules
+for the parts zag does not decide, such as function bodies and comptime.
+
 `fixtures/example.zig` is the Zig the worked example stands for. Nothing reads
 it. `zag-facts` hand-builds the tables that source would yield, and the rest of
 the pipeline is real. Every ownership class the analysis can reach appears in
