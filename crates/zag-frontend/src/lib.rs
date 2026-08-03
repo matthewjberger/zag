@@ -3,13 +3,15 @@ pub mod program;
 use program::{Function, Layout, Program};
 use zag_facts::build::{
     declare_field, declare_function, declare_parameter, intern, push_allocator_source, push_call,
-    push_call_argument, push_field_assignment, push_integer_type, push_memory_operation,
-    push_opaque_type, push_pointer_type, push_slice_type, push_string, push_struct,
-    push_struct_type, set_struct_deinit, set_struct_kind,
+    push_call_argument, push_expression, push_field_assignment_with, push_integer_type,
+    push_memory_operation, push_opaque_type, push_pointer_type, push_slice_type, push_string,
+    push_struct, push_struct_type, set_struct_deinit, set_struct_kind,
 };
-use zag_facts::handles::{FieldId, FunctionId, MemoryOperationId, NO_INDEX, StructId, TypeId};
+use zag_facts::handles::{
+    ExpressionId, FieldId, FunctionId, MemoryOperationId, NO_INDEX, StringId, StructId, TypeId,
+};
 use zag_facts::tables::{
-    AllocatorSourceKind, AssignmentSource, ContainerKind, MemoryOperationKind,
+    AllocatorSourceKind, AssignmentSource, ContainerKind, ExpressionKind, MemoryOperationKind,
     PARAMETER_FLAG_ALLOCATOR, PlaceKind, STRUCT_FLAG_EXTERN, Tables, empty_tables,
 };
 
@@ -478,6 +480,172 @@ fn unique_holder(program: &Program, field: &str) -> Option<String> {
     holders.next().is_none().then_some(only)
 }
 
+/// Translates the expression a field is set to into the small set of shapes
+/// the port can write. Anything outside that set is `Unsupported`, which stops
+/// the function's body being written rather than producing a guess.
+fn translate(
+    tables: &mut Tables,
+    program: &Program,
+    built: &Built,
+    function: &Function,
+    holder: Option<&program::Initialiser>,
+    result: TypeId,
+    text: &str,
+) -> ExpressionId {
+    let trimmed = text.trim().trim_start_matches("try ").trim();
+    let unsupported = |tables: &mut Tables| {
+        push_expression(
+            tables,
+            ExpressionKind::Unsupported,
+            StringId(NO_INDEX),
+            NO_INDEX,
+            result,
+            FieldId(NO_INDEX),
+            &[],
+        )
+    };
+
+    if let Some(argument) = allocated_from(trimmed)
+        && let Some(index) = parameter_index(function, argument)
+    {
+        return push_expression(
+            tables,
+            ExpressionKind::Allocation,
+            StringId(NO_INDEX),
+            index,
+            result,
+            FieldId(NO_INDEX),
+            &[],
+        );
+    }
+    if let Some(inner) = trimmed
+        .strip_prefix("@intCast(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
+        let child = translate(tables, program, built, function, holder, result, inner);
+        return push_expression(
+            tables,
+            ExpressionKind::Cast,
+            StringId(NO_INDEX),
+            NO_INDEX,
+            result,
+            FieldId(NO_INDEX),
+            &[child],
+        );
+    }
+    if let Some(holder) = trimmed.strip_suffix(".len")
+        && let Some(index) = parameter_index(function, holder)
+    {
+        return push_expression(
+            tables,
+            ExpressionKind::Length,
+            StringId(NO_INDEX),
+            index,
+            result,
+            FieldId(NO_INDEX),
+            &[],
+        );
+    }
+    if let Some(index) = parameter_index(function, trimmed) {
+        return push_expression(
+            tables,
+            ExpressionKind::Parameter,
+            StringId(NO_INDEX),
+            index,
+            result,
+            FieldId(NO_INDEX),
+            &[],
+        );
+    }
+    if trimmed.starts_with(".{") {
+        let Some(holder) = holder else {
+            return unsupported(tables);
+        };
+        let nested: Vec<&program::Initialiser> = function
+            .initialisers
+            .iter()
+            .filter(|entry| entry.parent == Some(holder.node))
+            .collect();
+        if nested.is_empty() {
+            return unsupported(tables);
+        }
+        let mut children = Vec::new();
+        for entry in &nested {
+            let Some(owner) = owner_of_initialiser(program, function, entry) else {
+                return unsupported(tables);
+            };
+            let Some(field) = field_of(tables, built, &owner, &entry.field) else {
+                return unsupported(tables);
+            };
+            let kind = tables
+                .fields
+                .field_type
+                .get(field.0 as usize)
+                .copied()
+                .unwrap_or(TypeId(NO_INDEX));
+            let value = translate(
+                tables,
+                program,
+                built,
+                function,
+                Some(entry),
+                kind,
+                &entry.value,
+            );
+            children.push(push_expression(
+                tables,
+                ExpressionKind::StructLiteral,
+                StringId(NO_INDEX),
+                NO_INDEX,
+                kind,
+                field,
+                &[value],
+            ));
+        }
+        return push_expression(
+            tables,
+            ExpressionKind::StructLiteral,
+            StringId(NO_INDEX),
+            NO_INDEX,
+            result,
+            FieldId(NO_INDEX),
+            &children,
+        );
+    }
+    if is_literal(trimmed) && !trimmed.starts_with('"') {
+        let text = push_string(&mut tables.strings, trimmed.as_bytes());
+        return push_expression(
+            tables,
+            ExpressionKind::Literal,
+            text,
+            NO_INDEX,
+            result,
+            FieldId(NO_INDEX),
+            &[],
+        );
+    }
+    unsupported(tables)
+}
+
+fn parameter_index(function: &Function, name: &str) -> Option<u32> {
+    function
+        .parameters
+        .iter()
+        .position(|parameter| parameter.name == name.trim())
+        .map(|index| index as u32)
+}
+
+/// The argument an allocating call copies from, which is what the port hands
+/// to `Box::from`.
+fn allocated_from(text: &str) -> Option<&str> {
+    let open = text.find('(')?;
+    if !ALLOCATING.contains(&last_segment(text[..open].trim())) {
+        return None;
+    }
+    let inside = text[open + 1..].strip_suffix(')')?;
+    inside.split(',').next_back().map(str::trim)
+}
+
 fn declare_memory(tables: &mut Tables, program: &Program, built: &Built, sources: &Sources) {
     for function in &program.functions {
         let Some((_, handle)) = built
@@ -494,6 +662,21 @@ fn declare_memory(tables: &mut Tables, program: &Program, built: &Built, sources
             let Some(field) = field_of(tables, built, &owner, &initialiser.field) else {
                 continue;
             };
+            let kind = tables
+                .fields
+                .field_type
+                .get(field.0 as usize)
+                .copied()
+                .unwrap_or(TypeId(NO_INDEX));
+            let expression = translate(
+                tables,
+                program,
+                built,
+                function,
+                Some(initialiser),
+                kind,
+                &initialiser.value,
+            );
             let resolved = through_locals(function, &initialiser.value);
             if let Some(allocator) = allocating_call(resolved) {
                 let source = classify_allocator(function, sources, allocator);
@@ -505,12 +688,13 @@ fn declare_memory(tables: &mut Tables, program: &Program, built: &Built, sources
                     PlaceKind::FieldOfParameter,
                     field,
                 );
-                push_field_assignment(
+                push_field_assignment_with(
                     tables,
                     field,
                     *handle,
                     AssignmentSource::Allocation,
                     operation,
+                    expression,
                 );
                 continue;
             }
@@ -525,7 +709,14 @@ fn declare_memory(tables: &mut Tables, program: &Program, built: &Built, sources
             } else {
                 continue;
             };
-            push_field_assignment(tables, field, *handle, source, MemoryOperationId(NO_INDEX));
+            push_field_assignment_with(
+                tables,
+                field,
+                *handle,
+                source,
+                MemoryOperationId(NO_INDEX),
+                expression,
+            );
         }
 
         for call in &function.calls {

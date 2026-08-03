@@ -1,9 +1,10 @@
 use crate::handles::{
-    AllocatorSourceId, CallId, FieldId, FunctionId, MemoryOperationId, StringId, StructId, TypeId,
+    AllocatorSourceId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId, StringId,
+    StructId, TypeId,
 };
 use crate::tables::{
-    AllocatorSourceKind, AssignmentSource, MemoryOperationKind, PlaceKind, Strings, Tables,
-    TypeKind, string_bytes, string_count,
+    AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind, PlaceKind, Strings,
+    Tables, TypeKind, string_bytes, string_count,
 };
 
 /// Appends without looking for an existing copy. Use this where identifiers
@@ -314,9 +315,50 @@ pub fn push_field_assignment(
     source: AssignmentSource,
     memory_operation: MemoryOperationId,
 ) {
+    push_field_assignment_with(
+        tables,
+        field,
+        function,
+        source,
+        memory_operation,
+        ExpressionId(crate::handles::NO_INDEX),
+    );
+}
+
+pub fn push_field_assignment_with(
+    tables: &mut Tables,
+    field: FieldId,
+    function: FunctionId,
+    source: AssignmentSource,
+    memory_operation: MemoryOperationId,
+    expression: ExpressionId,
+) {
     let assignments = &mut tables.field_assignments;
     assignments.field.push(field);
     assignments.function.push(function);
     assignments.source.push(source);
     assignments.memory_operation.push(memory_operation);
+    assignments.expression.push(expression);
+}
+
+pub fn push_expression(
+    tables: &mut Tables,
+    kind: ExpressionKind,
+    text: StringId,
+    parameter: u32,
+    result: TypeId,
+    field: FieldId,
+    children: &[ExpressionId],
+) -> ExpressionId {
+    let child_start = tables.expressions.children.len() as u32;
+    let expressions = &mut tables.expressions;
+    expressions.children.extend_from_slice(children);
+    expressions.kind.push(kind);
+    expressions.text.push(text);
+    expressions.parameter.push(parameter);
+    expressions.result.push(result);
+    expressions.field.push(field);
+    expressions.child_start.push(child_start);
+    expressions.child_count.push(children.len() as u32);
+    ExpressionId(expressions.kind.len() as u32 - 1)
 }

@@ -149,6 +149,23 @@ fn place_kind_from_raw(value: u32) -> Result<PlaceKind, DecodeError> {
     }
 }
 
+fn expression_kind_from_raw(value: u32) -> Result<crate::tables::ExpressionKind, DecodeError> {
+    use crate::tables::ExpressionKind;
+    match value {
+        0 => Ok(ExpressionKind::Literal),
+        1 => Ok(ExpressionKind::Parameter),
+        2 => Ok(ExpressionKind::Length),
+        3 => Ok(ExpressionKind::Cast),
+        4 => Ok(ExpressionKind::Allocation),
+        5 => Ok(ExpressionKind::StructLiteral),
+        6 => Ok(ExpressionKind::Unsupported),
+        other => Err(DecodeError::UnknownEnumValue {
+            column: "expressions.kind",
+            value: other,
+        }),
+    }
+}
+
 fn assignment_source_from_raw(value: u32) -> Result<AssignmentSource, DecodeError> {
     match value {
         0 => Ok(AssignmentSource::Allocation),
@@ -230,6 +247,16 @@ fn encode_side_tables(out: &mut Vec<u8>, tables: &Tables) {
     write_u32_column(out, &raw_from(&operations.place, |value| *value as u32));
     write_u32_column(out, &raw_from(&operations.place_field, |value| value.0));
 
+    let expressions = &tables.expressions;
+    write_u32_column(out, &raw_from(&expressions.kind, |value| *value as u32));
+    write_u32_column(out, &raw_from(&expressions.text, |value| value.0));
+    write_u32_column(out, &expressions.parameter);
+    write_u32_column(out, &raw_from(&expressions.result, |value| value.0));
+    write_u32_column(out, &raw_from(&expressions.field, |value| value.0));
+    write_u32_column(out, &expressions.child_start);
+    write_u32_column(out, &expressions.child_count);
+    write_u32_column(out, &raw_from(&expressions.children, |value| value.0));
+
     let assignments = &tables.field_assignments;
     write_u32_column(out, &raw_from(&assignments.field, |value| value.0));
     write_u32_column(out, &raw_from(&assignments.function, |value| value.0));
@@ -238,6 +265,7 @@ fn encode_side_tables(out: &mut Vec<u8>, tables: &Tables) {
         out,
         &raw_from(&assignments.memory_operation, |value| value.0),
     );
+    write_u32_column(out, &raw_from(&assignments.expression, |value| value.0));
 }
 
 fn raw_from<T>(values: &[T], project: impl Fn(&T) -> u32) -> Vec<u32> {
@@ -415,6 +443,28 @@ fn decode_memory(bytes: &[u8], cursor: &mut usize, tables: &mut Tables) -> Resul
         .map(FieldId)
         .collect();
 
+    let expressions = &mut tables.expressions;
+    expressions.kind = map_raw(read_u32_column(bytes, cursor)?, expression_kind_from_raw)?;
+    expressions.text = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(StringId)
+        .collect();
+    expressions.parameter = read_u32_column(bytes, cursor)?;
+    expressions.result = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(TypeId)
+        .collect();
+    expressions.field = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(FieldId)
+        .collect();
+    expressions.child_start = read_u32_column(bytes, cursor)?;
+    expressions.child_count = read_u32_column(bytes, cursor)?;
+    expressions.children = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(crate::handles::ExpressionId)
+        .collect();
+
     let assignments = &mut tables.field_assignments;
     assignments.field = read_u32_column(bytes, cursor)?
         .into_iter()
@@ -428,6 +478,10 @@ fn decode_memory(bytes: &[u8], cursor: &mut usize, tables: &mut Tables) -> Resul
     assignments.memory_operation = read_u32_column(bytes, cursor)?
         .into_iter()
         .map(MemoryOperationId)
+        .collect();
+    assignments.expression = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(crate::handles::ExpressionId)
         .collect();
     Ok(())
 }

@@ -12,7 +12,7 @@ use zag_render::ast::{
 
 const MAXIMUM_TYPE_DEPTH: u32 = 8;
 
-fn absent() -> StringId {
+pub fn absent() -> StringId {
     StringId(NO_INDEX)
 }
 
@@ -38,7 +38,7 @@ fn rust_integer_width(bit_width: u32) -> Option<u32> {
         .find(|width| *width >= bit_width)
 }
 
-fn lower_type_body(
+pub fn lower_type_body(
     ast: &mut Ast,
     tables: &Tables,
     lifetimes: &[u32],
@@ -124,7 +124,7 @@ fn lifetimes_by_type(tables: &Tables, ownership: &Ownership) -> Vec<u32> {
     carried
 }
 
-fn lower_field_type(
+pub fn lower_field_type(
     ast: &mut Ast,
     tables: &Tables,
     lifetimes: &[u32],
@@ -187,7 +187,7 @@ fn is_extern(tables: &Tables, owner: StructId) -> bool {
         .is_some_and(|flags| flags & STRUCT_FLAG_EXTERN != 0)
 }
 
-fn name_of(tables: &Tables, name: Option<&StringId>) -> Vec<u8> {
+pub fn name_of(tables: &Tables, name: Option<&StringId>) -> Vec<u8> {
     name.map(|name| string_bytes(&tables.strings, *name).to_vec())
         .unwrap_or_default()
 }
@@ -348,6 +348,8 @@ fn lower_layout_assertions(
     }
 }
 
+pub type Lowering = [u32];
+
 pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
     let mut ast = empty_ast();
     let lifetimes = lifetimes_by_type(tables, ownership);
@@ -367,6 +369,11 @@ pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
         }
         items.push(lower_struct(&mut ast, tables, ownership, &lifetimes, owner));
         lower_layout_assertions(&mut ast, tables, owner, &mut items);
+        if let Some(implementation) =
+            crate::constructor::lower_constructor(&mut ast, tables, ownership, &lifetimes, owner)
+        {
+            items.push(implementation);
+        }
     }
     ast.root = push_node(&mut ast, NodeKind::File, absent(), absent(), 0, 0, &items);
     ast

@@ -76,6 +76,7 @@ fn render_item(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
     match kind_of(ast, node)? {
         NodeKind::Struct => render_struct(out, ast, node),
         NodeKind::Enum => render_enum(out, ast, node),
+        NodeKind::Implementation => render_implementation(out, ast, node),
         NodeKind::AssertSize => render_assertion(out, ast, node, b"size_of"),
         NodeKind::AssertAlignment => render_assertion(out, ast, node, b"align_of"),
         NodeKind::AssertOffset => render_offset_assertion(out, ast, node),
@@ -184,8 +185,11 @@ fn render_type(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
         }
         NodeKind::TypeReference => {
             out.extend_from_slice(b"&");
-            out.extend_from_slice(lifetime_text(ast.flags[node.0 as usize]));
-            out.extend_from_slice(b" ");
+            let lifetime = lifetime_text(ast.flags[node.0 as usize]);
+            if !lifetime.is_empty() {
+                out.extend_from_slice(lifetime);
+                out.extend_from_slice(b" ");
+            }
             render_type(out, ast, only_child(ast, node)?)?;
             Ok(())
         }
@@ -199,11 +203,116 @@ fn render_type(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
     }
 }
 
+fn indent(out: &mut Vec<u8>, depth: usize) {
+    for _ in 0..depth {
+        out.extend_from_slice(b"    ");
+    }
+}
+
+fn render_implementation(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
+    out.extend_from_slice(b"impl ");
+    out.extend_from_slice(text_of(ast, node));
+    out.extend_from_slice(b" {\n");
+    for slot in node_children(ast, node) {
+        render_function(out, ast, ast.children[slot])?;
+    }
+    out.extend_from_slice(b"}\n");
+    Ok(())
+}
+
+fn render_function(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
+    let children = node_children(ast, node);
+    let parameters = ast.number[node.0 as usize] as usize;
+    if children.len() != parameters + 2 {
+        return Err(RenderError::MissingChild { node });
+    }
+    indent(out, 1);
+    out.extend_from_slice(b"pub fn ");
+    out.extend_from_slice(text_of(ast, node));
+    out.extend_from_slice(b"(");
+    for index in 0..parameters {
+        if index != 0 {
+            out.extend_from_slice(b", ");
+        }
+        let parameter = ast.children[children.start + index];
+        out.extend_from_slice(text_of(ast, parameter));
+        out.extend_from_slice(b": ");
+        render_type(out, ast, only_child(ast, parameter)?)?;
+    }
+    out.extend_from_slice(b") -> ");
+    render_type(out, ast, ast.children[children.start + parameters])?;
+    out.extend_from_slice(b" {\n");
+    indent(out, 2);
+    render_expression(out, ast, ast.children[children.start + parameters + 1], 2)?;
+    out.extend_from_slice(b"\n");
+    indent(out, 1);
+    out.extend_from_slice(b"}\n");
+    Ok(())
+}
+
+fn render_expression(
+    out: &mut Vec<u8>,
+    ast: &Ast,
+    node: NodeId,
+    depth: usize,
+) -> Result<(), RenderError> {
+    match kind_of(ast, node)? {
+        NodeKind::ExpressionLiteral | NodeKind::ExpressionPath => {
+            out.extend_from_slice(text_of(ast, node));
+            Ok(())
+        }
+        NodeKind::ExpressionCall => {
+            out.extend_from_slice(text_of(ast, node));
+            out.extend_from_slice(b"(");
+            for (position, slot) in node_children(ast, node).enumerate() {
+                if position != 0 {
+                    out.extend_from_slice(b", ");
+                }
+                render_expression(out, ast, ast.children[slot], depth)?;
+            }
+            out.extend_from_slice(b")");
+            Ok(())
+        }
+        NodeKind::ExpressionTry => {
+            out.extend_from_slice(text_of(ast, node));
+            out.extend_from_slice(b"::try_from(");
+            render_expression(out, ast, only_child(ast, node)?, depth)?;
+            out.extend_from_slice(b").unwrap()");
+            Ok(())
+        }
+        NodeKind::ExpressionStruct => {
+            out.extend_from_slice(text_of(ast, node));
+            out.extend_from_slice(b" {\n");
+            for slot in node_children(ast, node) {
+                let field = ast.children[slot];
+                indent(out, depth + 1);
+                let value = only_child(ast, field)?;
+                // Field init shorthand, which is what a person writes and what
+                // the linter asks for when the names already match.
+                let shorthand = kind_of(ast, value)? == NodeKind::ExpressionPath
+                    && text_of(ast, value) == text_of(ast, field);
+                out.extend_from_slice(text_of(ast, field));
+                if !shorthand {
+                    out.extend_from_slice(b": ");
+                    render_expression(out, ast, value, depth + 1)?;
+                }
+                out.extend_from_slice(b",\n");
+            }
+            indent(out, depth);
+            out.extend_from_slice(b"}");
+            Ok(())
+        }
+        found => Err(RenderError::WrongKind { node, found }),
+    }
+}
+
 fn lifetime_text(flags: u32) -> &'static [u8] {
     if flags == Lifetime::Static as u32 {
         b"'static"
     } else if flags == Lifetime::Arena as u32 {
         b"'bump"
+    } else if flags == Lifetime::Elided as u32 {
+        b""
     } else {
         b"'a"
     }

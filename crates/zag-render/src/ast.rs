@@ -21,6 +21,15 @@ pub enum NodeKind {
     AssertOffset = 10,
     Enum = 11,
     Variant = 12,
+    Implementation = 13,
+    Function = 14,
+    Parameter = 15,
+    ExpressionStruct = 16,
+    FieldValue = 17,
+    ExpressionLiteral = 18,
+    ExpressionPath = 19,
+    ExpressionCall = 20,
+    ExpressionTry = 21,
 }
 
 #[repr(u32)]
@@ -29,6 +38,8 @@ pub enum Lifetime {
     Borrow = 0,
     Static = 1,
     Arena = 2,
+    /// A borrow in a function signature, where Rust supplies the lifetime.
+    Elided = 3,
 }
 
 pub const STRUCT_FLAG_REPR_C: u32 = 1 << 0;

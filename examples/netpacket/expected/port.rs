@@ -17,3 +17,17 @@ pub struct Packet {
     pub header: Header,
     pub payload: Box<[u8]>,
 }
+
+impl Packet {
+    pub fn new(version: u16, body: &[u8]) -> Self {
+        Self {
+            header: Header {
+                magic: 0x5A414750,
+                version,
+                flags: 0,
+                length: u32::try_from(body.len()).unwrap(),
+            },
+            payload: Box::from(body),
+        }
+    }
+}

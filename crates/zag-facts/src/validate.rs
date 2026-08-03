@@ -312,6 +312,57 @@ fn check_side_table_column_lengths(tables: &Tables, violations: &mut Vec<Violati
         count,
         assignments.memory_operation.len(),
     );
+    expect_length(
+        violations,
+        "field_assignments",
+        "expression",
+        count,
+        assignments.expression.len(),
+    );
+    let expressions = &tables.expressions;
+    let count = expressions.kind.len();
+    expect_length(
+        violations,
+        "expressions",
+        "text",
+        count,
+        expressions.text.len(),
+    );
+    expect_length(
+        violations,
+        "expressions",
+        "parameter",
+        count,
+        expressions.parameter.len(),
+    );
+    expect_length(
+        violations,
+        "expressions",
+        "result",
+        count,
+        expressions.result.len(),
+    );
+    expect_length(
+        violations,
+        "expressions",
+        "field",
+        count,
+        expressions.field.len(),
+    );
+    expect_length(
+        violations,
+        "expressions",
+        "child_start",
+        count,
+        expressions.child_start.len(),
+    );
+    expect_length(
+        violations,
+        "expressions",
+        "child_count",
+        count,
+        expressions.child_count.len(),
+    );
 }
 
 fn check_strings(tables: &Tables, violations: &mut Vec<Violation>) {

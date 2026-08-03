@@ -1,5 +1,6 @@
 use crate::handles::{
-    AllocatorSourceId, CallId, FieldId, FunctionId, MemoryOperationId, StringId, StructId, TypeId,
+    AllocatorSourceId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId, StringId,
+    StructId, TypeId,
 };
 
 pub const TYPE_FLAG_SIGNED: u32 = 1 << 0;
@@ -147,12 +148,40 @@ pub struct MemoryOperations {
     pub place_field: Vec<FieldId>,
 }
 
+/// What a field is set to, in the shapes the port can write out. Anything
+/// else is `Unsupported`, which is how a body that cannot be ported yet says
+/// so rather than being guessed at.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ExpressionKind {
+    Literal = 0,
+    Parameter = 1,
+    Length = 2,
+    Cast = 3,
+    Allocation = 4,
+    StructLiteral = 5,
+    Unsupported = 6,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct Expressions {
+    pub kind: Vec<ExpressionKind>,
+    pub text: Vec<StringId>,
+    pub parameter: Vec<u32>,
+    pub result: Vec<TypeId>,
+    pub child_start: Vec<u32>,
+    pub child_count: Vec<u32>,
+    pub children: Vec<ExpressionId>,
+    pub field: Vec<FieldId>,
+}
+
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct FieldAssignments {
     pub field: Vec<FieldId>,
     pub function: Vec<FunctionId>,
     pub source: Vec<AssignmentSource>,
     pub memory_operation: Vec<MemoryOperationId>,
+    pub expression: Vec<ExpressionId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,6 +197,7 @@ pub struct Tables {
     pub calls: Calls,
     pub call_arguments: CallArguments,
     pub memory_operations: MemoryOperations,
+    pub expressions: Expressions,
     pub field_assignments: FieldAssignments,
 }
 
@@ -184,6 +214,7 @@ pub fn empty_tables() -> Tables {
         calls: Calls::default(),
         call_arguments: CallArguments::default(),
         memory_operations: MemoryOperations::default(),
+        expressions: Expressions::default(),
         field_assignments: FieldAssignments::default(),
     }
 }

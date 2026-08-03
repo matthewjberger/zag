@@ -17,3 +17,4 @@ handle!(ParameterId);
 handle!(CallId);
 handle!(AllocatorSourceId);
 handle!(MemoryOperationId);
+handle!(ExpressionId);
