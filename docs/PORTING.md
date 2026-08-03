@@ -12,8 +12,9 @@ Nothing here is advice. Each rule is a decision procedure with one answer.
 
 ## The procedure
 
-1. Run the pipeline over the program. `just fixture` does this for the worked
-   example and writes `example.rs` beside `example.report.txt`.
+1. Run the pipeline over the program. `just port <name>` does this for any of
+   the programs `just names` lists, writing the Rust and the report into
+   `target/` and printing both.
 2. Read the report before reading the generated Rust. The report says what was
    decided for every field and on what evidence.
 3. Settle every field marked `unknown`, and every field marked `low` or
@@ -28,7 +29,8 @@ Nothing here is advice. Each rule is a decision procedure with one answer.
 
 `examples/` holds Zig programs that build and run on their own, one per outcome
 this document describes. Each carries the port and the report it produces, so
-every rule below can be read against a case that actually runs.
+every rule below can be read against a case that actually runs. `just port
+tokenizer` ports one and prints what came out.
 
 | example | what it shows |
 |---|---|

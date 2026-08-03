@@ -135,25 +135,34 @@ pub struct Header {
     pub magic: u32,
     pub version: u16,
     pub flags: u16,
+    pub length: u32,
 }
 
-const _: () = assert!(core::mem::size_of::<Header>() == 8);
+const _: () = assert!(core::mem::size_of::<Header>() == 12);
 const _: () = assert!(core::mem::align_of::<Header>() == 4);
-const _: () = assert!(core::mem::offset_of!(Header, magic) == 0);
+const _: () = assert!(core::mem::offset_of!(Header, length) == 8);
 ```
 
-The `zag-verify` crate compiles the checked in fixture output, so those
-assertions run in the build, on three targets, on every commit. A layout the
-emitter got wrong fails CI rather than corrupting memory a year later.
+That is `netpacket`, which asserts the same numbers at comptime on the Zig
+side, so a layout that moves fails on both sides rather than one. Every port
+is compiled with constants evaluated, on three targets, on every commit, so a
+layout the emitter got wrong fails CI rather than corrupting memory a year
+later.
 
 ## The Zig side
 
-The part that does not exist yet is the frontend, and the plan for it is to
-instrument rather than to reverse engineer. Zig's `Sema` already resolves
-generic instantiations, inferred error sets, comptime branches, and types, then
-discards them. Vendoring the compiler and logging those decisions turns the
-hardest analyses in this project into a serialisation problem, and `InternPool`
-is already the structure of arrays this crate expects.
+`tools/reflect` and `tools/extract` are what exists so far. One asks the
+compiler what a program declares and the other parses it for the dataflow, and
+between them they hold the fact tables to the program they describe. Neither
+resolves a type to decide anything, so an allocator named wrongly still gets
+past them.
+
+Closing that is the frontend, and the plan for it is to instrument rather than
+to reverse engineer. Zig's `Sema` already resolves generic instantiations,
+inferred error sets, comptime branches, and types, then discards them.
+Vendoring the compiler and logging those decisions turns the hardest analyses
+in this project into a serialisation problem, and `InternPool` is already the
+structure of arrays this crate expects.
 
 That side stays deliberately small and free of analysis, because it is the part
 upstream Zig will keep breaking.

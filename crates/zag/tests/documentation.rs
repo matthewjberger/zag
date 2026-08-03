@@ -168,6 +168,115 @@ fn the_guide_names_every_lifetime_the_emitter_can_introduce() {
     }
 }
 
+fn documents() -> Vec<(&'static str, String)> {
+    let root = workspace_root();
+    [
+        "README.md",
+        "CLAUDE.md",
+        "docs/PORTING.md",
+        "examples/README.md",
+    ]
+    .into_iter()
+    .map(|name| {
+        let text = std::fs::read_to_string(root.join(name))
+            .unwrap_or_else(|cause| panic!("{name}: {cause}"));
+        (name, text)
+    })
+    .collect()
+}
+
+fn recipes() -> Vec<String> {
+    let text = std::fs::read_to_string(workspace_root().join("justfile"))
+        .expect("the justfile is readable");
+    text.lines()
+        .filter(|line| !line.starts_with([' ', '\t', '#', '[']))
+        .filter(|line| !line.contains(":=") && !line.starts_with("set ") && line.contains(':'))
+        .filter_map(|line| {
+            let line = line.strip_prefix('@').unwrap_or(line);
+            let head = line.split(':').next()?;
+            let name = head.split_whitespace().next()?;
+            name.chars()
+                .all(|letter| letter.is_ascii_lowercase() || letter == '-')
+                .then(|| name.to_string())
+        })
+        .collect()
+}
+
+/// Every `just something` the documentation tells a reader to run has to be a
+/// recipe. A renamed recipe leaves instructions that fail on the first try.
+fn mentioned_recipes(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("just ")
+            && let Some(name) = rest.split_whitespace().next()
+        {
+            found.push(name.to_string());
+        }
+        let mut cursor = line;
+        while let Some(start) = cursor.find("`just ") {
+            let rest = &cursor[start + 6..];
+            let end = rest.find('`').unwrap_or(rest.len());
+            if let Some(name) = rest[..end].split_whitespace().next() {
+                found.push(name.to_string());
+            }
+            cursor = &rest[end.min(rest.len())..];
+        }
+    }
+    found
+}
+
+#[test]
+fn there_are_recipes_to_check() {
+    let recipes = recipes();
+    assert!(recipes.contains(&"port".to_string()), "{recipes:?}");
+    assert!(recipes.contains(&"check".to_string()), "{recipes:?}");
+}
+
+#[test]
+fn every_recipe_the_documentation_names_exists() {
+    let recipes = recipes();
+    let mut checked = 0;
+    for (name, text) in documents() {
+        for mentioned in mentioned_recipes(&text) {
+            checked += 1;
+            assert!(
+                recipes.contains(&mentioned),
+                "{name} tells the reader to run `just {mentioned}`, which is not a recipe"
+            );
+        }
+    }
+    // Without this the check would pass on documentation that names no recipe
+    // at all, which is the state a broken scan produces.
+    assert!(checked > 8, "only {checked} recipe mentions were found");
+}
+
+#[test]
+fn the_readme_shows_layout_assertions_the_emitter_actually_writes() {
+    let port = std::fs::read_to_string(
+        workspace_root()
+            .join("examples")
+            .join("netpacket")
+            .join("expected")
+            .join("port.rs"),
+    )
+    .expect("the netpacket port is readable");
+    let readme = std::fs::read_to_string(workspace_root().join("README.md"))
+        .expect("the readme is readable");
+    let shown: Vec<&str> = readme
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("const _: () = assert!"))
+        .collect();
+    assert!(!shown.is_empty(), "the README should show what it claims");
+    for line in shown {
+        assert!(
+            port.contains(line),
+            "the README shows an assertion no port carries: {line}"
+        );
+    }
+}
+
 #[test]
 fn the_readme_points_at_the_guide() {
     let readme = std::fs::read_to_string(workspace_root().join("README.md"))

@@ -45,14 +45,22 @@ allocator, so a table naming the wrong allocator still passes. Resolving that
 is what the Sema frontend is for.
 
 ```bash
-zag examples                                          # what is available
+just names            # what can be ported
+just port wordcount   # port it into target/ and print the Rust and the report
+```
+
+The two steps underneath, for anything that needs them separately:
+
+```bash
 zag facts --example wordcount --output wordcount.facts
 zag emit --facts wordcount.facts --source port.rs --report port.report.txt
 ```
 
 `just examples` runs that for every example and rewrites the `expected`
-directories. `cargo test` compares against them, so a change to the emitter
-shows up as a diff you have to look at.
+directories, which is the only recipe that touches them. `cargo test` compares
+against those files and then hands each freshly generated port to `rustc` with
+constants evaluated, so a change to the emitter shows up either as a diff you
+have to look at or as a port that stopped building.
 
 Read the report before the port. [../docs/PORTING.md](../docs/PORTING.md) is
 what each line means and what to do about it.

@@ -1,7 +1,7 @@
 /target
 
-# Generated. `just fixture` writes this one from the fixture tables in
-# zag-facts, which the tree carries instead.
+# Generated. `just port <name>` writes one from the tables in zag-facts, which
+# is what the tree carries instead.
 *.facts
 
 *.tmp

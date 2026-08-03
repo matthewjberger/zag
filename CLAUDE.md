@@ -35,14 +35,16 @@ example. `zag-analysis` is the three passes. `zag-render` owns the flat Rust
 syntax tree and prints it. `zag-emit` lowers facts plus analysis into that tree
 and into the review report. `zag-repair` turns compiler diagnostics into span
 edits. `zag` is the driver. `zag-verify` exists only to compile the checked in
-fixture output so its layout assertions run in the build.
+ports so their layout assertions run during `cargo build`, and
+`crates/zag/tests/compilation.rs` does the same to freshly generated ones so a
+broken emitter fails before anything is regenerated.
 
 Dependencies point one way. `zag-facts` and `zag-render` are leaves.
 
 `examples/` holds Zig programs that build on their own, and
 `zag-facts/src/examples/` holds the tables each one would produce. They are the
-integration layer over unit tests that cover each pass alone. `zag-verify`
-compiles every port they produce, so the layout assertions run in the build.
+integration layer over unit tests that cover each pass alone, and the chain runs
+from `zig build` through the two tools below to `rustc` compiling the port.
 
 `tools/reflect` asks the compiler what an example declares and
 `crates/zag/tests/reflection.rs` holds the tables to it: structs, layout, field
