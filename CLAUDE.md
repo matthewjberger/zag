@@ -1,4 +1,4 @@
-# Zag
+﻿# Zag
 
 A whole-program Zig to Rust porting pipeline. Read `README.md` first for what
 the passes decide and why the unit of work is the program rather than the file.
@@ -35,7 +35,12 @@ example. `zag-analysis` is the three passes. `zag-render` owns the flat Rust
 syntax tree and prints it. `zag-emit` lowers facts plus analysis into that tree
 and into the review report. `zag-repair` turns compiler diagnostics into span
 edits. `zag-frontend` merges what the two Zig tools report into fact tables,
-which is what `zag read` runs. `zag` is the driver. `zag-verify` exists only to compile the checked in
+which is what `zag read` runs. `zag read` takes a root file and follows
+`@import` from it, so the tables cover the program rather than one file. Each
+Zig file becomes a module, the root file keeps the top level, and a program of
+one file has no module tree at all. Modules arrive root first and then sorted
+by path, and handles are handed out in that order, which is what makes the
+merge deterministic. `zag` is the driver. `zag-verify` exists only to compile the checked in
 ports so their layout assertions run during `cargo build`, and
 `crates/zag/tests/compilation.rs` does the same to freshly generated ones so a
 broken emitter fails before anything is regenerated.
@@ -47,13 +52,13 @@ Dependencies point one way. `zag-facts` and `zag-render` are leaves.
 integration layer over unit tests that cover each pass alone, and the chain runs
 from `zig build` through the two tools below to `rustc` compiling the port.
 
-`tools/reflect` asks the compiler what an example declares and
+`crates/zag/tools/reflect` asks the compiler what an example declares and
 `crates/zag/tests/reflection.rs` holds the tables to it: structs, layout, field
 order, offsets, and public function arity. It is analysed, never linked, so it
 works wherever zig can compile. Never hand-write an offset. Read it off
 `just reflect <name>`, because Zig reorders an `auto` layout.
 
-`tools/extract` parses an example and `crates/zag/tests/extraction.rs` holds
+`crates/zag/tools/extract` parses an example and `crates/zag/tests/extraction.rs` holds
 the tables to the dataflow: functions including private ones, parameter names,
 call edges, memory operations, and field assignments. It reads syntax, so it
 recognises `x.dupe(...)` by spelling rather than by resolving `x`. A table

@@ -1,11 +1,70 @@
 use crate::handles::{
-    AllocatorSourceId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId, StringId,
-    StructId, TypeId,
+    AllocatorSourceId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId,
+    StringId, StructId, TypeId,
 };
 use crate::tables::{
-    AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind, PlaceKind, Strings,
-    Tables, TypeKind, string_bytes, string_count,
+    AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind, PlaceKind,
+    ROOT_MODULE, Strings, Tables, TypeKind, module_count, string_bytes, string_count,
 };
+
+/// Adds a Zig file to the program. The root is already there, so this is for
+/// everything the crawl reached from it, and the order it is called in is the
+/// order the modules come out in.
+pub fn declare_module(tables: &mut Tables, name: &[u8], path: &[u8]) -> ModuleId {
+    let name = push_string(&mut tables.strings, name);
+    let path = push_string(&mut tables.strings, path);
+    let start = tables.unresolved_imports.owner.len() as u32;
+    let modules = &mut tables.modules;
+    modules.name.push(name);
+    modules.path.push(path);
+    modules.unresolved_start.push(start);
+    modules.unresolved_count.push(0);
+    ModuleId(module_count(modules) as u32 - 1)
+}
+
+/// Names the root, which exists before anything is read and so cannot be
+/// declared like the rest.
+pub fn name_root_module(tables: &mut Tables, name: &[u8], path: &[u8]) {
+    let name = push_string(&mut tables.strings, name);
+    let path = push_string(&mut tables.strings, path);
+    tables.modules.name[0] = name;
+    tables.modules.path[0] = path;
+}
+
+/// An `@import` that named neither a file the crawl could open nor a module
+/// the project declares. Recorded rather than dropped, because a program read
+/// with a hole in it is a different program.
+pub fn push_unresolved_import(tables: &mut Tables, owner: ModuleId, name: &[u8]) {
+    let name = push_string(&mut tables.strings, name);
+    tables.unresolved_imports.owner.push(owner);
+    tables.unresolved_imports.name.push(name);
+    if let Some(count) = tables.modules.unresolved_count.get_mut(owner.0 as usize) {
+        *count += 1;
+    }
+}
+
+pub fn set_type_module(tables: &mut Tables, kind: TypeId, module: ModuleId) {
+    if let Some(slot) = tables.types.module.get_mut(kind.0 as usize) {
+        *slot = module;
+    }
+}
+
+/// Puts a struct and the type that names it in the same module, which is the
+/// only arrangement that makes sense and the only one the emitter expects.
+pub fn set_struct_module(tables: &mut Tables, owner: StructId, module: ModuleId) {
+    let Some(slot) = tables.structs.module.get_mut(owner.0 as usize) else {
+        return;
+    };
+    *slot = module;
+    let kind = struct_type(tables, owner);
+    set_type_module(tables, kind, module);
+}
+
+pub fn set_function_module(tables: &mut Tables, function: FunctionId, module: ModuleId) {
+    if let Some(slot) = tables.functions.module.get_mut(function.0 as usize) {
+        *slot = module;
+    }
+}
 
 /// Appends without looking for an existing copy. Use this where identifiers
 /// are written once and never compared, such as the emitted syntax tree, where
@@ -156,6 +215,7 @@ fn push_type_row(tables: &mut Tables, row: TypeRow) -> TypeId {
     types.kind.push(row.kind);
     types.element.push(row.element);
     types.count.push(row.count);
+    types.module.push(ROOT_MODULE);
     types.name.push(row.name);
     types.size.push(row.size);
     types.alignment.push(row.alignment);
@@ -225,6 +285,7 @@ pub fn push_struct(
     let field_start = tables.fields.owner.len() as u32;
     let structs = &mut tables.structs;
     structs.name.push(name);
+    structs.module.push(ROOT_MODULE);
     structs.type_id.push(type_id);
     structs.field_start.push(field_start);
     structs.field_count.push(0);
@@ -267,6 +328,7 @@ pub fn push_function(tables: &mut Tables, name: StringId, owner: StructId) -> Fu
     let parameter_start = tables.parameters.owner.len() as u32;
     let functions = &mut tables.functions;
     functions.name.push(name);
+    functions.module.push(ROOT_MODULE);
     functions.owner.push(owner);
     functions.parameter_start.push(parameter_start);
     functions.parameter_count.push(0);

@@ -139,6 +139,88 @@ fn scale() -> usize {
         .unwrap_or(200)
 }
 
+/// One module per struct, each importing the one before it and naming its type
+/// across the boundary, which is the shape that makes every name resolution a
+/// cross-module lookup rather than a local one.
+fn synthetic_project(modules: usize) -> Vec<zag_frontend::project::SourceModule> {
+    use zag_frontend::program::{Container, Function, Member, Parameter, Program};
+    (0..modules)
+        .map(|index| {
+            let previous = index.saturating_sub(1);
+            let declared = if index == 0 {
+                "u32".to_string()
+            } else {
+                format!("previous.Type{previous}")
+            };
+            Program {
+                containers: vec![Container {
+                    name: format!("Type{index}"),
+                    kind: "struct".to_string(),
+                    members: vec![Member {
+                        name: "held".to_string(),
+                        declared: declared.clone(),
+                    }],
+                }],
+                functions: vec![Function {
+                    name: format!("make{index}"),
+                    returns: format!("Type{index}"),
+                    parameters: vec![Parameter {
+                        name: "held".to_string(),
+                        declared,
+                    }],
+                    ..Function::default()
+                }],
+                layouts: Vec::new(),
+            }
+        })
+        .enumerate()
+        .map(|(index, program)| zag_frontend::project::SourceModule {
+            name: if index == 0 {
+                String::new()
+            } else {
+                format!("module{index}")
+            },
+            path: format!("module{index}.zig"),
+            program,
+            imports: if index == 0 {
+                Vec::new()
+            } else {
+                vec![("previous".to_string(), format!("module{}", index - 1))]
+            },
+            unresolved: Vec::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn merging_modules_is_linear_in_what_they_declare() {
+    let modules = scale();
+    let merged = Instant::now();
+    let tables = zag_frontend::build_project(&synthetic_project(modules), "x86_64-linux");
+    let merge_time = merged.elapsed();
+    println!(
+        "modules={modules} structs={} functions={} merge={merge_time:?}",
+        zag_facts::tables::struct_count(&tables.structs),
+        function_count(&tables.functions),
+    );
+    zag_facts::validate::validate(&tables).expect("the merge builds valid tables");
+    assert_eq!(zag_facts::tables::module_count(&tables.modules), modules);
+    assert_eq!(
+        zag_facts::tables::struct_count(&tables.structs),
+        modules,
+        "every module declares exactly one type"
+    );
+}
+
+#[test]
+fn merging_the_same_modules_twice_gives_the_same_tables() {
+    let modules = synthetic_project(16);
+    assert_eq!(
+        zag_frontend::build_project(&modules, "x86_64-linux"),
+        zag_frontend::build_project(&modules, "x86_64-linux")
+    );
+}
+
 #[test]
 fn the_passes_scale_to_a_whole_program() {
     let structs = scale();

@@ -1,4 +1,4 @@
-# Porting Zig to Rust
+﻿# Porting Zig to Rust
 
 This is how to read what zag decided, and the rules for the parts it does not
 decide.
@@ -121,6 +121,34 @@ invent something. A `!T` infers its error set from the body, so the Zig named
 no error type and neither can the port. A return type that carries a lifetime
 needs that lifetime tied to a parameter, and an arena lifetime has no parameter
 to tie to once the allocator is gone.
+
+## Modules
+
+`zag read` takes the root file of a program and follows `@import` from there,
+so the tables cover every file rather than the one it was pointed at. That is
+not a convenience: which allocator reached a field is decided by a caller that
+may be three files away, and reading one file at a time cannot see it.
+
+Each Zig file becomes a Rust module. A Zig file is a struct and `@import` gives
+you that struct, so `store.Entry` is already a path and `store::Entry` is the
+same path in Rust. The root file keeps the top level, because in Zig the root
+file is the program's own namespace. A program that is one file therefore has
+no module tree, which is not a special case: it has one namespace and so does
+the port.
+
+A type named from another module is spelled with the path to the module that
+declares it, relative rather than rooted at the crate, so a port stays correct
+when it is included somewhere else.
+
+| report line | what to do |
+|---|---|
+| `modules: N` followed by a path per file | nothing, this is what was read |
+| `unresolved import: <text>` | find what it names and point zag at it, because the analysis never saw those declarations |
+
+An unresolved import is an import that named neither a file the crawl could
+open nor a module the project declares. Every ownership decision below it in
+the report was made without whatever that import brought in, so treat them the
+same way you would treat a `warning:` line.
 
 ## Types
 

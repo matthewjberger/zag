@@ -10,6 +10,9 @@ repository = "https://github.com/matthewjberger/zag"
 license = "MIT OR Apache-2.0"
 edition = "2024"
 rust-version = "1.85"
+readme = "README.md"
+keywords = ["zig", "transpiler", "porting", "ownership", "codegen"]
+categories = ["development-tools", "compilers"]
 
 [workspace.dependencies]
 zag-analysis = { version = "0.1.0", path = "crates/zag-analysis" }

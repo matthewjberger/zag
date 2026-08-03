@@ -54,7 +54,8 @@ fn ported(program: &Program) -> String {
 fn outcome(program: &Program, function: FunctionId) -> Disposition {
     let analysis = analyze(&program.tables);
     let lifetimes = zag_emit::lower::lifetimes_by_type(&program.tables, &analysis.ownership);
-    disposition(&program.tables, &analysis.ownership, &lifetimes, function)
+    let lowering = zag_emit::lower::lowering(&lifetimes, zag_facts::tables::ROOT_MODULE, false);
+    disposition(&program.tables, &analysis.ownership, lowering, function)
 }
 
 #[test]

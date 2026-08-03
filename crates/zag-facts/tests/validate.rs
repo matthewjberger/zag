@@ -128,6 +128,7 @@ fn a_sentinel_handle_is_accepted_where_absence_is_meaningful() {
     tables.types.kind.push(TypeKind::Opaque);
     tables.types.element.push(TypeId(zag_facts::NO_INDEX));
     tables.types.count.push(0);
+    tables.types.module.push(zag_facts::tables::ROOT_MODULE);
     tables.types.name.push(name);
     tables.types.size.push(0);
     tables.types.alignment.push(1);

@@ -9,6 +9,7 @@ macro_rules! handle {
 }
 
 handle!(StringId);
+handle!(ModuleId);
 handle!(TypeId);
 handle!(StructId);
 handle!(FieldId);

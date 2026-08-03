@@ -182,7 +182,7 @@ fn frees_and_nothing_else(tables: &Tables, ownership: &Ownership, function: Func
 pub fn disposition(
     tables: &Tables,
     ownership: &Ownership,
-    lifetimes: &crate::lower::Lowering,
+    lowering: crate::lower::Lowering,
     function: FunctionId,
 ) -> Disposition {
     if let Some(owner) = owner_of(tables, function)
@@ -195,7 +195,7 @@ pub fn disposition(
     {
         return Disposition::SubsumedByDrop;
     }
-    if crate::function::writes_a_signature(tables, ownership, lifetimes, function) {
+    if crate::function::writes_a_signature(tables, ownership, lowering, function) {
         return Disposition::Signature;
     }
     Disposition::NotPorted
@@ -207,6 +207,7 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
         return;
     }
     let lifetimes = crate::lower::lifetimes_by_type(tables, ownership);
+    let qualified = zag_facts::tables::has_submodules(&tables.modules);
     out.push(b'\n');
     write_line(out, &[b"functions: ", count.to_string().as_bytes()]);
     for index in 0..count {
@@ -221,7 +222,14 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
             .and_then(|owner| tables.structs.name.get(owner.0 as usize))
             .map(|name| string_bytes(&tables.strings, *name))
             .unwrap_or(b"");
-        let outcome: &[u8] = match disposition(tables, ownership, &lifetimes, handle) {
+        let module = tables
+            .functions
+            .module
+            .get(index)
+            .copied()
+            .unwrap_or(zag_facts::tables::ROOT_MODULE);
+        let lowering = crate::lower::lowering(&lifetimes, module, qualified);
+        let outcome: &[u8] = match disposition(tables, ownership, lowering, handle) {
             Disposition::Constructor => b"ported, as the constructor",
             Disposition::SubsumedByDrop => b"disappears, Drop frees what it freed",
             Disposition::Signature => b"ported, signature only, the body is still to write",
@@ -235,6 +243,40 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
     }
 }
 
+/// Which files the program was read from, and which `@import` reached nothing.
+/// An unresolved import means declarations the analysis never saw, so it is
+/// said out loud rather than left for a reader to notice from what is missing.
+fn write_modules(out: &mut Vec<u8>, tables: &Tables) {
+    let count = zag_facts::tables::module_count(&tables.modules);
+    if count <= 1 && tables.unresolved_imports.owner.is_empty() {
+        return;
+    }
+    write_line(out, &[b"modules: ", count.to_string().as_bytes()]);
+    for index in 0..count {
+        let path = tables
+            .modules
+            .path
+            .get(index)
+            .map(|path| string_bytes(&tables.strings, *path))
+            .unwrap_or(b"");
+        write_line(out, &[b"  ", path]);
+        for slot in
+            zag_facts::tables::module_unresolved(&tables.modules, zag_facts::ModuleId(index as u32))
+        {
+            let Some(name) = tables.unresolved_imports.name.get(slot) else {
+                continue;
+            };
+            write_line(
+                out,
+                &[
+                    b"    unresolved import: ",
+                    string_bytes(&tables.strings, *name),
+                ],
+            );
+        }
+    }
+}
+
 pub fn render_report(tables: &Tables, analysis: &Analysis) -> Vec<u8> {
     let mut out = Vec::new();
     write_line(&mut out, &[b"zag ownership report"]);
@@ -242,6 +284,7 @@ pub fn render_report(tables: &Tables, analysis: &Analysis) -> Vec<u8> {
         &mut out,
         &[b"target: ", string_bytes(&tables.strings, tables.target)],
     );
+    write_modules(&mut out, tables);
     let fields = field_count(&tables.fields);
     write_line(&mut out, &[b"fields: ", fields.to_string().as_bytes()]);
     if !analysis.provenance.converged {

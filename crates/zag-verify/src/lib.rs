@@ -12,6 +12,10 @@ pub mod conflict {
     include!("../../../examples/conflict/expected/port.rs");
 }
 
+pub mod ledger {
+    include!("../../../examples/ledger/expected/port.rs");
+}
+
 pub mod netpacket {
     include!("../../../examples/netpacket/expected/port.rs");
 }

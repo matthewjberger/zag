@@ -1,7 +1,7 @@
 use crate::handles::NO_INDEX;
 use crate::tables::{
-    Tables, call_count, field_count, function_count, memory_operation_count, parameter_count,
-    string_count, struct_count, type_count,
+    Tables, call_count, field_count, function_count, memory_operation_count, module_count,
+    parameter_count, string_count, struct_count, type_count,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,6 +49,12 @@ pub enum Violation {
     PlaceWithoutField {
         row: usize,
     },
+    /// Nothing declares a module, so every declaration's module handle dangles
+    /// and the port has no namespace to put anything in.
+    NoRootModule,
+    UnresolvedImportRangeMismatch {
+        owner: usize,
+    },
 }
 
 pub fn validate(tables: &Tables) -> Result<(), Vec<Violation>> {
@@ -58,6 +64,7 @@ pub fn validate(tables: &Tables) -> Result<(), Vec<Violation>> {
     check_handles(tables, &mut violations);
     check_field_ranges(tables, &mut violations);
     check_parameter_ranges(tables, &mut violations);
+    check_module_ranges(tables, &mut violations);
     check_parameter_indices(tables, &mut violations);
     check_places(tables, &mut violations);
     check_call_order(tables, &mut violations);
@@ -86,10 +93,36 @@ fn expect_length(
 }
 
 fn check_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) {
+    let modules = &tables.modules;
+    let count = module_count(modules);
+    expect_length(violations, "modules", "path", count, modules.path.len());
+    expect_length(
+        violations,
+        "modules",
+        "unresolved_start",
+        count,
+        modules.unresolved_start.len(),
+    );
+    expect_length(
+        violations,
+        "modules",
+        "unresolved_count",
+        count,
+        modules.unresolved_count.len(),
+    );
+    expect_length(
+        violations,
+        "unresolved_imports",
+        "name",
+        tables.unresolved_imports.owner.len(),
+        tables.unresolved_imports.name.len(),
+    );
+
     let types = &tables.types;
     let count = type_count(types);
     expect_length(violations, "types", "element", count, types.element.len());
     expect_length(violations, "types", "count", count, types.count.len());
+    expect_length(violations, "types", "module", count, types.module.len());
     expect_length(violations, "types", "name", count, types.name.len());
     expect_length(violations, "types", "size", count, types.size.len());
     expect_length(
@@ -117,6 +150,7 @@ fn check_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) {
 fn check_struct_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) {
     let structs = &tables.structs;
     let count = struct_count(structs);
+    expect_length(violations, "structs", "module", count, structs.module.len());
     expect_length(
         violations,
         "structs",
@@ -168,6 +202,13 @@ fn check_field_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) 
 fn check_function_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) {
     let functions = &tables.functions;
     let count = function_count(functions);
+    expect_length(
+        violations,
+        "functions",
+        "module",
+        count,
+        functions.module.len(),
+    );
     expect_length(
         violations,
         "functions",
@@ -420,6 +461,7 @@ fn check_strings(tables: &Tables, violations: &mut Vec<Violation>) {
 
 struct Limits {
     strings: usize,
+    modules: usize,
     types: usize,
     structs: usize,
     fields: usize,
@@ -432,6 +474,7 @@ struct Limits {
 fn limits(tables: &Tables) -> Limits {
     Limits {
         strings: string_count(&tables.strings),
+        modules: module_count(&tables.modules),
         types: type_count(&tables.types),
         structs: struct_count(&tables.structs),
         fields: field_count(&tables.fields),
@@ -485,6 +528,51 @@ fn check_handles(tables: &Tables, violations: &mut Vec<Violation>) {
 fn check_type_handles(tables: &Tables, violations: &mut Vec<Violation>, limits: &Limits) {
     check_column(
         violations,
+        "modules",
+        "name",
+        &tables.modules.name,
+        |value| value.0,
+        limits.strings,
+        true,
+    );
+    check_column(
+        violations,
+        "modules",
+        "path",
+        &tables.modules.path,
+        |value| value.0,
+        limits.strings,
+        true,
+    );
+    check_column(
+        violations,
+        "unresolved_imports",
+        "owner",
+        &tables.unresolved_imports.owner,
+        |value| value.0,
+        limits.modules,
+        false,
+    );
+    check_column(
+        violations,
+        "unresolved_imports",
+        "name",
+        &tables.unresolved_imports.name,
+        |value| value.0,
+        limits.strings,
+        false,
+    );
+    check_column(
+        violations,
+        "types",
+        "module",
+        &tables.types.module,
+        |value| value.0,
+        limits.modules,
+        false,
+    );
+    check_column(
+        violations,
         "types",
         "element",
         &tables.types.element,
@@ -504,6 +592,24 @@ fn check_type_handles(tables: &Tables, violations: &mut Vec<Violation>, limits: 
 }
 
 fn check_declaration_handles(tables: &Tables, violations: &mut Vec<Violation>, limits: &Limits) {
+    check_column(
+        violations,
+        "structs",
+        "module",
+        &tables.structs.module,
+        |value| value.0,
+        limits.modules,
+        false,
+    );
+    check_column(
+        violations,
+        "functions",
+        "module",
+        &tables.functions.module,
+        |value| value.0,
+        limits.modules,
+        false,
+    );
     check_column(
         violations,
         "structs",
@@ -753,6 +859,38 @@ fn check_field_ranges(tables: &Tables, violations: &mut Vec<Violation>) {
         if tables.fields.owner[row].0 < tables.fields.owner[row - 1].0 {
             violations.push(Violation::FieldsNotGroupedByOwner { row });
         }
+    }
+}
+
+fn check_module_ranges(tables: &Tables, violations: &mut Vec<Violation>) {
+    let modules = &tables.modules;
+    if module_count(modules) == 0 {
+        if struct_count(&tables.structs) != 0 || function_count(&tables.functions) != 0 {
+            violations.push(Violation::NoRootModule);
+        }
+        return;
+    }
+    let mut expected_start: u32 = 0;
+    for owner in 0..module_count(modules) {
+        let (Some(&start), Some(&count)) = (
+            modules.unresolved_start.get(owner),
+            modules.unresolved_count.get(owner),
+        ) else {
+            return;
+        };
+        if start != expected_start {
+            violations.push(Violation::UnresolvedImportRangeMismatch { owner });
+        }
+        let Some(next) = start.checked_add(count) else {
+            violations.push(Violation::UnresolvedImportRangeMismatch { owner });
+            return;
+        };
+        expected_start = next;
+    }
+    if expected_start as usize != tables.unresolved_imports.owner.len() {
+        violations.push(Violation::UnresolvedImportRangeMismatch {
+            owner: module_count(modules),
+        });
     }
 }
 

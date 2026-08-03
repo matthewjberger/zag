@@ -96,31 +96,49 @@ fn parse(output: &str) -> Reflection {
     reflection
 }
 
+/// Every Zig file the example is made of, sorted so a run is reproducible. A
+/// program can be several files and the tables describe all of them, so the
+/// check has to see all of them too.
+pub fn sources_of(root: &Path, name: &str) -> Vec<PathBuf> {
+    let directory = root.join("examples").join(name).join("src");
+    let mut found: Vec<PathBuf> = std::fs::read_dir(&directory)
+        .unwrap_or_else(|cause| panic!("{}: {cause}", directory.display()))
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "zig"))
+        .collect();
+    found.sort();
+    found
+}
+
 fn reflect(name: &str) -> Reflection {
     let root = workspace_root();
-    let tool = root.join("tools").join("reflect").join("main.zig");
-    let source = root
-        .join("examples")
-        .join(name)
-        .join("src")
+    let tool = root
+        .join("crates")
+        .join("zag")
+        .join("tools")
+        .join("reflect")
         .join("main.zig");
-    // Analysed, never linked. The report arrives through `@compileError`, so
-    // this fails to compile on purpose and no platform's libc is involved.
-    let output = Command::new("zig")
-        .arg("build-obj")
-        .arg("-fno-emit-bin")
-        .arg("--dep")
-        .arg("target")
-        .arg(format!("-Mroot={}", tool.display()))
-        .arg(format!("-Mtarget={}", source.display()))
-        .current_dir(&root)
-        .output()
-        .unwrap_or_else(|cause| panic!("running zig over {name}: {cause}"));
-    let text = String::from_utf8_lossy(&output.stderr).into_owned();
+    let mut text = String::new();
+    for source in sources_of(&root, name) {
+        // Analysed, never linked. The report arrives through `@compileError`,
+        // so this fails to compile on purpose and no platform's libc is
+        // involved.
+        let output = Command::new("zig")
+            .arg("build-obj")
+            .arg("-fno-emit-bin")
+            .arg("--dep")
+            .arg("target")
+            .arg(format!("-Mroot={}", tool.display()))
+            .arg(format!("-Mtarget={}", source.display()))
+            .current_dir(&root)
+            .output()
+            .unwrap_or_else(|cause| panic!("running zig over {name}: {cause}"));
+        text.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
     assert!(
-        text.contains("struct "),
-        "reflection over {name} produced nothing:\n{text}\n{}",
-        String::from_utf8_lossy(&output.stdout)
+        text.contains("struct ") || text.contains("fn "),
+        "reflection over {name} produced nothing:\n{text}"
     );
     parse(&text)
 }

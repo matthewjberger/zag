@@ -73,6 +73,7 @@ fn an_unknown_enumeration_value_is_rejected() {
     tables.types.kind.push(TypeKind::Integer);
     tables.types.element.push(TypeId(0));
     tables.types.count.push(0);
+    tables.types.module.push(zag_facts::tables::ROOT_MODULE);
     tables.types.name.push(StringId(0));
     tables.types.size.push(4);
     tables.types.alignment.push(4);
@@ -90,12 +91,18 @@ fn an_unknown_enumeration_value_is_rejected() {
     );
 }
 
+/// Walks the header and every column ahead of the type table, so a column
+/// added in front of it moves this rather than silently pointing at the wrong
+/// one. The six that precede it are the module table and its unresolved
+/// imports, in the order `encode` writes them.
 fn find_first_type_kind_offset(bytes: &[u8]) -> usize {
     let mut cursor = MAGIC.len() + 4 + 4;
     let string_byte_count = read_length(bytes, cursor);
     cursor += 4 + string_byte_count;
-    let string_offset_count = read_length(bytes, cursor);
-    cursor += 4 + string_offset_count * 4;
+    for _ in 0..7 {
+        let count = read_length(bytes, cursor);
+        cursor += 4 + count * 4;
+    }
     cursor + 4
 }
 

@@ -1,0 +1,25 @@
+zag ownership report
+target: x86_64-linux
+modules: 4
+  main.zig
+  close.zig
+  entry.zig
+  store.zig
+fields: 2
+
+Entry.label
+  class: owned
+  confidence: medium
+  evidence: freed outside the deinit call closure (close)
+  evidence: assigned from an allocation (open)
+  evidence: allocator resolves to the global allocator
+
+Entry.amount
+  class: value
+  confidence: high
+
+functions: 4
+  main: still to write, the port cannot spell what it gives back
+  close: disappears, Drop frees what it freed
+  open: still to write, the port cannot spell what it gives back
+  total: ported, signature only, the body is still to write

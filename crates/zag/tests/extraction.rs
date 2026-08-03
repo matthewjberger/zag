@@ -3,7 +3,7 @@
 //! declarations and layout, and this covers which function calls which, which
 //! call allocates or frees, and what each struct literal puts in a field.
 //!
-//! `tools/extract` reads syntax rather than semantics, so the checks below are
+//! `crates/zag/tools/extract` reads syntax rather than semantics, so the checks below are
 //! necessary conditions rather than a re-derivation. A table claiming an
 //! allocation in a function that never allocates fails here. A table claiming
 //! the wrong allocator does not, and that is what the Sema frontend is for.
@@ -98,23 +98,39 @@ fn parse(text: &str) -> Extraction {
     extraction
 }
 
+/// Every Zig file the example is made of, sorted so a run is reproducible.
+fn sources_of(root: &Path, name: &str) -> Vec<PathBuf> {
+    let directory = root.join("examples").join(name).join("src");
+    let mut found: Vec<PathBuf> = std::fs::read_dir(&directory)
+        .unwrap_or_else(|cause| panic!("{}: {cause}", directory.display()))
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "zig"))
+        .collect();
+    found.sort();
+    found
+}
+
 fn extract(name: &str) -> Option<Extraction> {
     let root = workspace_root();
-    let tool = root.join("tools").join("extract").join("main.zig");
-    let source = root
-        .join("examples")
-        .join(name)
-        .join("src")
+    let tool = root
+        .join("crates")
+        .join("zag")
+        .join("tools")
+        .join("extract")
         .join("main.zig");
-    let output = Command::new("zig")
-        .arg("run")
-        .arg(&tool)
-        .arg("--")
-        .arg(&source)
-        .current_dir(&root)
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stderr).into_owned();
+    let mut text = String::new();
+    for source in sources_of(&root, name) {
+        let output = Command::new("zig")
+            .arg("run")
+            .arg(&tool)
+            .arg("--")
+            .arg(&source)
+            .current_dir(&root)
+            .output()
+            .ok()?;
+        text.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
     // Building the extractor needs a linker, which not every machine has set
     // up for zig. Parsing is the same everywhere, so one platform running this
     // is enough and the rest say so rather than failing.

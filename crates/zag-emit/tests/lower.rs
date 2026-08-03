@@ -206,6 +206,7 @@ fn a_boolean_field_becomes_a_boolean() {
             types.kind.push(TypeKind::Bool);
             types.element.push(TypeId(zag_facts::NO_INDEX));
             types.count.push(0);
+            types.module.push(zag_facts::tables::ROOT_MODULE);
             types.name.push(zag_facts::StringId(zag_facts::NO_INDEX));
             types.size.push(1);
             types.alignment.push(1);

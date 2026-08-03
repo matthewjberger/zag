@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "zag-render"
 description = "A flat Rust syntax tree and the renderer that turns it into bytes"
 version.workspace = true
@@ -8,6 +8,9 @@ repository.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 zag-facts.workspace = true

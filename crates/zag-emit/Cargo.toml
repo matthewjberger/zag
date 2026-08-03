@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "zag-emit"
 description = "Lowers zag fact tables plus their analysis results into a Rust syntax tree and a review report"
 version.workspace = true
@@ -8,6 +8,9 @@ repository.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 zag-analysis.workspace = true

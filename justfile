@@ -1,4 +1,4 @@
-set windows-shell := ["powershell.exe"]
+﻿set windows-shell := ["powershell.exe"]
 export RUST_BACKTRACE := "1"
 
 # Displays the list of available commands
@@ -71,12 +71,12 @@ examples:
 # Prints what the Zig compiler resolved about one example, which is what the
 # hand-built fact tables are checked against. Needs zig on PATH
 reflect name:
-    -zig build-obj -fno-emit-bin --dep target -Mroot=tools/reflect/main.zig -Mtarget=examples/{{name}}/src/main.zig
+    -zig build-obj -fno-emit-bin --dep target -Mroot=crates/zag/tools/reflect/main.zig -Mtarget=examples/{{name}}/src/main.zig
 
 # Prints the dataflow the parser found in one example, which is the other half
 # of what the hand-built fact tables are checked against. Needs zig on PATH
 extract name:
-    zig run tools/extract/main.zig -- examples/{{name}}/src/main.zig
+    zig run crates/zag/tools/extract/main.zig -- examples/{{name}}/src/main.zig
 
 # Builds and runs every example Zig program. Needs zig on PATH
 [windows]
@@ -142,6 +142,31 @@ report: fixture
 # never been asked to.
 bench scale="80000":
     ZAG_SCALE={{scale}} cargo test -q -p zag --release --test scaling -- --nocapture
+
+# Publishes every crate to crates.io, in dependency order
+#
+# A crate cannot be published before what it depends on, so the order here is
+# the dependency order and changing it breaks the run partway through.
+# `zag-verify` is not published: it exists only to compile the checked in ports
+# during the build.
+publish:
+    cargo publish -p zag-facts
+    cargo publish -p zag-render
+    cargo publish -p zag-analysis
+    cargo publish -p zag-frontend
+    cargo publish -p zag-emit
+    cargo publish -p zag-repair
+    cargo publish -p zag
+
+# Dry run of publishing every crate
+publish-dry:
+    cargo publish -p zag-facts --dry-run
+    cargo publish -p zag-render --dry-run
+    cargo publish -p zag-analysis --dry-run
+    cargo publish -p zag-frontend --dry-run
+    cargo publish -p zag-emit --dry-run
+    cargo publish -p zag-repair --dry-run
+    cargo publish -p zag --dry-run
 
 # Checks for unused dependencies
 udeps:

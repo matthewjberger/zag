@@ -78,11 +78,42 @@ fn render_item(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
         NodeKind::Enum => render_enum(out, ast, node),
         NodeKind::Implementation => render_implementation(out, ast, node),
         NodeKind::Function => render_function(out, ast, node, 0),
+        NodeKind::Module => render_module(out, ast, node),
         NodeKind::AssertSize => render_assertion(out, ast, node, b"size_of"),
         NodeKind::AssertAlignment => render_assertion(out, ast, node, b"align_of"),
         NodeKind::AssertOffset => render_offset_assertion(out, ast, node),
         found => Err(RenderError::WrongKind { node, found }),
     }
+}
+
+/// A Zig file is a struct, so it becomes a Rust module. The body is rendered
+/// the same way a whole file is and then shifted in one level, which keeps one
+/// printer for an item wherever it ends up.
+fn render_module(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
+    let mut body = Vec::new();
+    let mut previous: Option<NodeKind> = None;
+    for slot in node_children(ast, node) {
+        let item = ast.children[slot];
+        let kind = kind_of(ast, item)?;
+        if let Some(previous) = previous
+            && !(is_assertion(previous) && is_assertion(kind))
+        {
+            body.push(b'\n');
+        }
+        render_item(&mut body, ast, item)?;
+        previous = Some(kind);
+    }
+    out.extend_from_slice(b"pub mod ");
+    out.extend_from_slice(text_of(ast, node));
+    out.extend_from_slice(b" {\n");
+    for line in body.split_inclusive(|byte| *byte == b'\n') {
+        if line != b"\n" {
+            indent(out, 1);
+        }
+        out.extend_from_slice(line);
+    }
+    out.extend_from_slice(b"}\n");
+    Ok(())
 }
 
 fn render_struct(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {

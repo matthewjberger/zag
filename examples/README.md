@@ -1,4 +1,4 @@
-# Examples
+﻿# Examples
 
 Each directory is a Zig program that builds and runs on its own, and each one
 exists to drive a different answer out of the analysis. Together they are the
@@ -18,8 +18,9 @@ zig build run
 
 ## Porting one
 
-`zag read --zig <file>` builds fact tables from a program by reading it, which
-is what `just read` runs. Each example also carries tables built by hand in
+`zag read --zig <file>` takes the root file of a program, follows `@import`
+from it, and builds fact tables from every file it reaches, which is what
+`just read` runs. Each example also carries tables built by hand in
 `crates/zag-facts/src/examples/`, from before the frontend existed. The tests
 require both routes to produce the same port, so the hand-built tables are the
 oracle the frontend is held to.
@@ -27,13 +28,13 @@ oracle the frontend is held to.
 Two tools do the reading, and the tests hold the hand-built tables to what they
 find as well.
 
-`tools/reflect` imports an example and asks the compiler what it resolved:
+`crates/zag/tools/reflect` imports an example and asks the compiler what it resolved:
 every struct, its layout, every field in order with its offset, and every
 public function with its parameter count. It is analysed and never linked, so
 the report arrives through `@compileError` and no platform's libc is involved.
 Run it with `just reflect netpacket`.
 
-`tools/extract` parses an example with the compiler's own parser and reports
+`crates/zag/tools/extract` parses an example with the compiler's own parser and reports
 the dataflow: which function calls which, which call allocates or frees, and
 what each struct literal puts in each field. It sees private declarations,
 which reflection cannot, so the function check runs both ways. Run it with
@@ -41,7 +42,7 @@ which reflection cannot, so the function check runs both ways. Run it with
 
 Between them, every function, parameter, call, memory operation, and field
 assignment in the tables is checked against the program. What is left is the
-part that needs types to decide: `tools/extract` recognises `x.dupe(...)` as an
+part that needs types to decide: `crates/zag/tools/extract` recognises `x.dupe(...)` as an
 allocation because of how it is spelled, not because it resolved `x` to an
 allocator, so a table naming the wrong allocator still passes. Resolving that
 is what the Sema frontend is for.
@@ -103,6 +104,14 @@ ownership wrapper goes inside the option rather than around it, which is why it
 comes back as `Option<&'static [u8]>` and not an option of a reference to an
 option. A field the Zig only ever sets to null is still a field the constructor
 has to fill, so `null` is one of the expressions the port can write.
+
+`ledger` is four files rather than one, and it is the case no file at a time
+approach can get right. `Entry` is declared in `entry.zig`, its `label` is
+allocated in `store.zig`, and that same field is freed in `close.zig`. No file
+on its own says who owns the label, and reading them together is what makes it
+`Box<[u8]>`. Each file becomes a Rust module, because a Zig file is a struct
+and that is the same shape, and a type named across a module boundary is
+spelled with the path to the module that declares it.
 
 `conflict` is the one that produces a finding rather than a port. `makeCache`
 takes an allocator, one caller hands it the heap and another hands it an arena,

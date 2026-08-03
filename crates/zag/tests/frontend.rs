@@ -26,15 +26,15 @@ fn source_of(name: &str) -> PathBuf {
 }
 
 fn read(name: &str) -> Option<zag_facts::tables::Tables> {
-    let program = match zag::read_zig(&source_of(name)) {
-        Ok(program) => program,
+    let modules = match zag::read_project(&source_of(name)) {
+        Ok(modules) => modules,
         Err(complaint) => {
             // Reading needs zig, and the parser half of it needs a linker.
             eprintln!("skipping {name}: {complaint}");
             return None;
         }
     };
-    Some(zag_frontend::build(&program, "x86_64-linux"))
+    Some(zag_frontend::build_project(&modules, "x86_64-linux"))
 }
 
 fn runnable_names() -> Vec<&'static str> {

@@ -72,14 +72,14 @@ fn receiver_row(tables: &Tables, function: FunctionId) -> Option<usize> {
 
 /// Every lifetime the return type mentions, however deeply. A slice of a
 /// borrowing struct carries that struct's lifetimes as much as the struct does.
-fn lifetimes_in(tables: &Tables, lifetimes: &Lowering, kind: TypeId, depth: u32) -> u32 {
+fn lifetimes_in(tables: &Tables, lowering: Lowering, kind: TypeId, depth: u32) -> u32 {
     if depth >= 8 {
         return 0;
     }
     let index = kind.0 as usize;
-    let mut carried = lifetimes.get(index).copied().unwrap_or(0);
+    let mut carried = lowering.lifetimes.get(index).copied().unwrap_or(0);
     if let Some(element) = tables.types.element.get(index).copied() {
-        carried |= lifetimes_in(tables, lifetimes, element, depth + 1);
+        carried |= lifetimes_in(tables, lowering, element, depth + 1);
     }
     carried
 }
@@ -88,7 +88,7 @@ fn lifetimes_in(tables: &Tables, lifetimes: &Lowering, kind: TypeId, depth: u32)
 /// return type mentions and its `impl` block does not already supply.
 fn lifetimes_to_declare(
     tables: &Tables,
-    lifetimes: &Lowering,
+    lowering: Lowering,
     ownership: &Ownership,
     function: FunctionId,
 ) -> u32 {
@@ -98,7 +98,7 @@ fn lifetimes_to_declare(
         .get(function.0 as usize)
         .copied()
         .unwrap_or(TypeId(NO_INDEX));
-    let carried = lifetimes_in(tables, lifetimes, returns, 0);
+    let carried = lifetimes_in(tables, lowering, returns, 0);
     let in_scope = owner_of(tables, function)
         .map(|owner| crate::lower::lifetimes_of(tables, ownership, owner))
         .unwrap_or(0);
@@ -123,7 +123,7 @@ fn has_reference_parameter(tables: &Tables, function: FunctionId) -> bool {
 fn lower_parameter(
     ast: &mut Ast,
     tables: &Tables,
-    lifetimes: &Lowering,
+    lowering: Lowering,
     row: usize,
     receiver: Option<usize>,
     borrow: Lifetime,
@@ -150,7 +150,7 @@ fn lower_parameter(
     // and everything else comes across by value. The same rule the constructor
     // uses, because it is the same question.
     let kind = if is_reference_type(&tables.types, declared) {
-        let body = lower_type_body(ast, tables, lifetimes, declared, 0);
+        let body = lower_type_body(ast, tables, lowering, declared, 0);
         push_node(
             ast,
             NodeKind::TypeReference,
@@ -161,7 +161,7 @@ fn lower_parameter(
             &[body],
         )
     } else {
-        lower_field_type(ast, tables, lifetimes, declared, OwnershipClass::Value)
+        lower_field_type(ast, tables, lowering, declared, OwnershipClass::Value)
     };
     let text = string_bytes(&tables.strings, tables.parameters.name[row]).to_vec();
     let name = push_string(&mut ast.strings, &text);
@@ -186,7 +186,7 @@ fn error_set_name(tables: &Tables, function: FunctionId) -> Option<Vec<u8>> {
 pub fn writes_a_signature(
     tables: &Tables,
     ownership: &Ownership,
-    lifetimes: &Lowering,
+    lowering: Lowering,
     function: FunctionId,
 ) -> bool {
     let index = function.0 as usize;
@@ -204,7 +204,7 @@ pub fn writes_a_signature(
     if fallible && error_set_name(tables, function).is_none() {
         return false;
     }
-    let declared = lifetimes_to_declare(tables, lifetimes, ownership, function);
+    let declared = lifetimes_to_declare(tables, lowering, ownership, function);
     if declared & STRUCT_FLAG_ARENA_LIFETIME != 0 {
         return false;
     }
@@ -219,7 +219,7 @@ pub fn writes_a_signature(
 fn lower_return_type(
     ast: &mut Ast,
     tables: &Tables,
-    lifetimes: &Lowering,
+    lowering: Lowering,
     function: FunctionId,
 ) -> NodeId {
     let returns = tables
@@ -228,7 +228,7 @@ fn lower_return_type(
         .get(function.0 as usize)
         .copied()
         .unwrap_or(TypeId(NO_INDEX));
-    let body = lower_type_body(ast, tables, lifetimes, returns, 0);
+    let body = lower_type_body(ast, tables, lowering, returns, 0);
     let Some(text) = error_set_name(tables, function) else {
         return body;
     };
@@ -252,16 +252,16 @@ pub fn lower_signature(
     ast: &mut Ast,
     tables: &Tables,
     ownership: &Ownership,
-    lifetimes: &Lowering,
+    lowering: Lowering,
     function: FunctionId,
 ) -> Option<NodeId> {
-    if !writes_a_signature(tables, ownership, lifetimes, function) {
+    if !writes_a_signature(tables, ownership, lowering, function) {
         return None;
     }
     let receiver = receiver_row(tables, function);
     // A lifetime the signature introduces is tied to its own reference
     // parameters, which is the only thing in the signature it can be tied to.
-    let declared = lifetimes_to_declare(tables, lifetimes, ownership, function);
+    let declared = lifetimes_to_declare(tables, lowering, ownership, function);
     let borrows = declared & STRUCT_FLAG_BORROW_LIFETIME != 0;
     let borrow = if borrows {
         Lifetime::Borrow
@@ -283,11 +283,11 @@ pub fn lower_signature(
             continue;
         }
         children.push(lower_parameter(
-            ast, tables, lifetimes, row, receiver, borrow,
+            ast, tables, lowering, row, receiver, borrow,
         ));
         count += 1;
     }
-    children.push(lower_return_type(ast, tables, lifetimes, function));
+    children.push(lower_return_type(ast, tables, lowering, function));
     // An unwritten body uses none of what it was handed, so the port discards
     // each argument the way a person writing the same stub would. Each line
     // goes away as soon as the body starts using its argument.
@@ -337,27 +337,31 @@ pub fn owner_of(tables: &Tables, function: FunctionId) -> Option<StructId> {
         .filter(|owner| owner.0 != NO_INDEX)
 }
 
-/// Signatures the port writes for one struct, in declaration order. Anything
-/// the report says is already ported or disappears is not among them.
+/// Signatures the port writes for one struct in one module, in declaration
+/// order. Anything the report says is already ported or disappears is not
+/// among them.
 pub fn signatures_for(
     ast: &mut Ast,
     tables: &Tables,
     ownership: &Ownership,
-    lifetimes: &Lowering,
+    lowering: Lowering,
     owner: Option<StructId>,
 ) -> Vec<NodeId> {
     let mut written = Vec::new();
     for index in 0..zag_facts::tables::function_count(&tables.functions) {
         let function = FunctionId(index as u32);
+        if tables.functions.module.get(index).copied() != Some(lowering.module) {
+            continue;
+        }
         if owner_of(tables, function) != owner {
             continue;
         }
-        if crate::report::disposition(tables, ownership, lifetimes, function)
+        if crate::report::disposition(tables, ownership, lowering, function)
             != crate::report::Disposition::Signature
         {
             continue;
         }
-        if let Some(node) = lower_signature(ast, tables, ownership, lifetimes, function) {
+        if let Some(node) = lower_signature(ast, tables, ownership, lowering, function) {
             written.push(node);
         }
     }

@@ -4,7 +4,8 @@ use zag_facts::tables::{
     ContainerKind, STRUCT_FLAG_EXTERN, TYPE_FLAG_SIGNED, Tables, TypeKind, string_bytes,
     struct_count, struct_fields,
 };
-use zag_facts::{NO_INDEX, StringId, StructId, TypeId};
+use zag_facts::tables::{ROOT_MODULE, has_submodules, module_count};
+use zag_facts::{ModuleId, NO_INDEX, StringId, StructId, TypeId};
 use zag_render::ast::{
     Ast, Lifetime, NodeId, NodeKind, STRUCT_FLAG_ARENA_LIFETIME, STRUCT_FLAG_BORROW_LIFETIME,
     STRUCT_FLAG_REPR_C, empty_ast, push_node,
@@ -38,10 +39,63 @@ fn rust_integer_width(bit_width: u32) -> Option<u32> {
         .find(|width| *width >= bit_width)
 }
 
+/// Where a type is being spelled from. A name in another module needs the path
+/// to that module in front of it, and a program that is one file has no other
+/// module for a name to be in.
+#[derive(Clone, Copy)]
+pub struct Lowering<'a> {
+    pub lifetimes: &'a [u32],
+    pub module: ModuleId,
+    pub qualified: bool,
+}
+
+pub fn lowering(lifetimes: &[u32], module: ModuleId, qualified: bool) -> Lowering<'_> {
+    Lowering {
+        lifetimes,
+        module,
+        qualified,
+    }
+}
+
+/// How a reference from here has to spell a name declared there.
+///
+/// Every module is a direct child of the port's root, so one `super` always
+/// reaches it. The path is relative rather than rooted at the crate on
+/// purpose: the port is checked by including it inside another module, and a
+/// `crate::` path would break the moment it moved.
+fn qualify(tables: &Tables, lowering: Lowering, kind: TypeId, name: &[u8]) -> Vec<u8> {
+    let owner = tables
+        .types
+        .module
+        .get(kind.0 as usize)
+        .copied()
+        .unwrap_or(ROOT_MODULE);
+    if !lowering.qualified || owner == lowering.module || owner == ROOT_MODULE {
+        return name.to_vec();
+    }
+    let module = tables
+        .modules
+        .name
+        .get(owner.0 as usize)
+        .map(|text| string_bytes(&tables.strings, *text))
+        .unwrap_or(b"");
+    if module.is_empty() {
+        return name.to_vec();
+    }
+    let mut path = Vec::new();
+    if lowering.module != ROOT_MODULE {
+        path.extend_from_slice(b"super::");
+    }
+    path.extend_from_slice(module);
+    path.extend_from_slice(b"::");
+    path.extend_from_slice(name);
+    path
+}
+
 pub fn lower_type_body(
     ast: &mut Ast,
     tables: &Tables,
-    lifetimes: &[u32],
+    lowering: Lowering,
     kind: TypeId,
     depth: u32,
 ) -> NodeId {
@@ -60,7 +114,7 @@ pub fn lower_type_body(
         .unwrap_or(TypeId(NO_INDEX));
     match type_kind {
         TypeKind::Slice => {
-            let element = lower_type_body(ast, tables, lifetimes, element, depth + 1);
+            let element = lower_type_body(ast, tables, lowering, element, depth + 1);
             push_node(
                 ast,
                 NodeKind::TypeSliceBody,
@@ -71,9 +125,9 @@ pub fn lower_type_body(
                 &[element],
             )
         }
-        TypeKind::Pointer => lower_type_body(ast, tables, lifetimes, element, depth + 1),
+        TypeKind::Pointer => lower_type_body(ast, tables, lowering, element, depth + 1),
         TypeKind::Optional => {
-            let inner = lower_type_body(ast, tables, lifetimes, element, depth + 1);
+            let inner = lower_type_body(ast, tables, lowering, element, depth + 1);
             push_node(
                 ast,
                 NodeKind::TypeOption,
@@ -85,7 +139,7 @@ pub fn lower_type_body(
             )
         }
         TypeKind::Array => {
-            let inner = lower_type_body(ast, tables, lifetimes, element, depth + 1);
+            let inner = lower_type_body(ast, tables, lowering, element, depth + 1);
             let count = tables.types.count.get(index).copied().unwrap_or(0);
             push_node(
                 ast,
@@ -123,8 +177,9 @@ pub fn lower_type_body(
             if text.is_empty() {
                 return unit_type(ast);
             }
+            let text = qualify(tables, lowering, kind, &text);
             let name = push_string(&mut ast.strings, &text);
-            let carried = lifetimes.get(index).copied().unwrap_or(0);
+            let carried = lowering.lifetimes.get(index).copied().unwrap_or(0);
             push_node(ast, NodeKind::TypePath, name, absent(), 0, carried, &[])
         }
     }
@@ -152,7 +207,7 @@ pub fn lifetimes_by_type(tables: &Tables, ownership: &Ownership) -> Vec<u32> {
 pub fn lower_field_type(
     ast: &mut Ast,
     tables: &Tables,
-    lifetimes: &[u32],
+    lowering: Lowering,
     kind: TypeId,
     class: OwnershipClass,
 ) -> NodeId {
@@ -166,7 +221,7 @@ pub fn lower_field_type(
             .get(kind.0 as usize)
             .copied()
             .unwrap_or(TypeId(NO_INDEX));
-        let inner = lower_field_type(ast, tables, lifetimes, element, class);
+        let inner = lower_field_type(ast, tables, lowering, element, class);
         return push_node(
             ast,
             NodeKind::TypeOption,
@@ -177,7 +232,7 @@ pub fn lower_field_type(
             &[inner],
         );
     }
-    let body = lower_type_body(ast, tables, lifetimes, kind, 0);
+    let body = lower_type_body(ast, tables, lowering, kind, 0);
     match class {
         OwnershipClass::Value => body,
         OwnershipClass::Owned => {
@@ -251,7 +306,7 @@ pub fn name_of(tables: &Tables, name: Option<&StringId>) -> Vec<u8> {
 fn lower_enum(
     ast: &mut Ast,
     tables: &Tables,
-    lifetimes: &[u32],
+    lowering: Lowering,
     owner: StructId,
     carries_payloads: bool,
 ) -> NodeId {
@@ -264,7 +319,7 @@ fn lower_enum(
             && let Some(&kind) = tables.fields.field_type.get(row)
             && !is_void(tables, kind)
         {
-            payload.push(lower_type_body(ast, tables, lifetimes, kind, 0));
+            payload.push(lower_type_body(ast, tables, lowering, kind, 0));
         }
         variants.push(push_node(
             ast,
@@ -318,7 +373,7 @@ fn lower_struct(
     ast: &mut Ast,
     tables: &Tables,
     ownership: &Ownership,
-    lifetimes: &[u32],
+    lowering: Lowering,
     owner: StructId,
 ) -> NodeId {
     let mut fields = Vec::new();
@@ -328,7 +383,7 @@ fn lower_struct(
         else {
             continue;
         };
-        let field_type = lower_field_type(ast, tables, lifetimes, field_type, class);
+        let field_type = lower_field_type(ast, tables, lowering, field_type, class);
         let text = name_of(tables, tables.fields.name.get(row));
         let name = push_string(&mut ast.strings, &text);
         fields.push(push_node(
@@ -401,32 +456,78 @@ fn lower_layout_assertions(
     }
 }
 
-pub type Lowering = [u32];
-
-pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
-    let mut ast = empty_ast();
-    let lifetimes = lifetimes_by_type(tables, ownership);
-    let mut items = Vec::new();
+/// Everything one module declares, in declaration order. The root's items go
+/// at the top level and every other module's go inside a `pub mod`, which is
+/// the shape the Zig already had: its root file is the program's namespace and
+/// each other file is a namespace inside it.
+fn lower_module(
+    ast: &mut Ast,
+    tables: &Tables,
+    ownership: &Ownership,
+    lowering: Lowering,
+    items: &mut Vec<NodeId>,
+) {
     for index in 0..struct_count(&tables.structs) {
         let owner = StructId(index as u32);
+        if tables.structs.module.get(index).copied() != Some(lowering.module) {
+            continue;
+        }
         match tables.structs.kind.get(index).copied() {
             Some(ContainerKind::Enum) | Some(ContainerKind::ErrorSet) => {
-                items.push(lower_enum(&mut ast, tables, &lifetimes, owner, false));
+                items.push(lower_enum(ast, tables, lowering, owner, false));
                 continue;
             }
             Some(ContainerKind::Union) => {
-                items.push(lower_enum(&mut ast, tables, &lifetimes, owner, true));
+                items.push(lower_enum(ast, tables, lowering, owner, true));
                 continue;
             }
             _ => {}
         }
-        items.push(lower_struct(&mut ast, tables, ownership, &lifetimes, owner));
-        lower_layout_assertions(&mut ast, tables, owner, &mut items);
-        lower_implementation(&mut ast, tables, ownership, &lifetimes, owner, &mut items);
+        items.push(lower_struct(ast, tables, ownership, lowering, owner));
+        lower_layout_assertions(ast, tables, owner, items);
+        lower_implementation(ast, tables, ownership, lowering, owner, items);
     }
-    for signature in crate::function::signatures_for(&mut ast, tables, ownership, &lifetimes, None)
-    {
-        items.push(signature);
+    items.extend(crate::function::signatures_for(
+        ast, tables, ownership, lowering, None,
+    ));
+}
+
+pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
+    let mut ast = empty_ast();
+    let lifetimes = lifetimes_by_type(tables, ownership);
+    let qualified = has_submodules(&tables.modules);
+    let mut items = Vec::new();
+    lower_module(
+        &mut ast,
+        tables,
+        ownership,
+        lowering(&lifetimes, ROOT_MODULE, qualified),
+        &mut items,
+    );
+    for index in 1..module_count(&tables.modules) {
+        let module = ModuleId(index as u32);
+        let mut inside = Vec::new();
+        lower_module(
+            &mut ast,
+            tables,
+            ownership,
+            lowering(&lifetimes, module, qualified),
+            &mut inside,
+        );
+        if inside.is_empty() {
+            continue;
+        }
+        let text = name_of(tables, tables.modules.name.get(index));
+        let name = push_string(&mut ast.strings, &text);
+        items.push(push_node(
+            &mut ast,
+            NodeKind::Module,
+            name,
+            absent(),
+            0,
+            0,
+            &inside,
+        ));
     }
     ast.root = push_node(&mut ast, NodeKind::File, absent(), absent(), 0, 0, &items);
     ast
@@ -438,19 +539,19 @@ fn lower_implementation(
     ast: &mut Ast,
     tables: &Tables,
     ownership: &Ownership,
-    lifetimes: &Lowering,
+    lowering: Lowering,
     owner: StructId,
     items: &mut Vec<NodeId>,
 ) {
     let mut methods: Vec<NodeId> =
-        crate::constructor::lower_constructor(ast, tables, ownership, lifetimes, owner)
+        crate::constructor::lower_constructor(ast, tables, ownership, lowering, owner)
             .into_iter()
             .collect();
     methods.extend(crate::function::signatures_for(
         ast,
         tables,
         ownership,
-        lifetimes,
+        lowering,
         Some(owner),
     ));
     if methods.is_empty() {

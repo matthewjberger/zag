@@ -19,7 +19,8 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
-    /// Reads a Zig file with the compiler and writes its fact file
+    /// Reads a Zig program with the compiler and writes its fact file. The
+    /// path is the root file, and everything it imports is read with it.
     Read {
         #[arg(long)]
         zig: PathBuf,
@@ -71,8 +72,8 @@ fn run(arguments: Arguments) -> Result<(), String> {
             output,
             target,
         } => {
-            let program = zag::read_zig(&zig)?;
-            let tables = zag_frontend::build(&program, &target);
+            let modules = zag::read_project(&zig)?;
+            let tables = zag_frontend::build_project(&modules, &target);
             write(&output, &zag_facts::wire::encode(&tables))
         }
         Command::Emit {

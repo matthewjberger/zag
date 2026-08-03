@@ -1,7 +1,29 @@
 use crate::handles::{
-    AllocatorSourceId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId, StringId,
-    StructId, TypeId,
+    AllocatorSourceId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId,
+    StringId, StructId, TypeId,
 };
+
+/// The Zig files the program is made of. A Zig file is a struct, so a module
+/// here becomes a Rust module and a declaration keeps the namespace it was
+/// written in. Row zero is the root, whose declarations sit at the top level
+/// the way the root file's do in Zig.
+pub const ROOT_MODULE: ModuleId = ModuleId(0);
+
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct Modules {
+    pub name: Vec<StringId>,
+    pub path: Vec<StringId>,
+    /// An `@import` the crawl could not turn into a file, kept so the report
+    /// can say the program was read with a hole in it.
+    pub unresolved_start: Vec<u32>,
+    pub unresolved_count: Vec<u32>,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct UnresolvedImports {
+    pub owner: Vec<ModuleId>,
+    pub name: Vec<StringId>,
+}
 
 pub const TYPE_FLAG_SIGNED: u32 = 1 << 0;
 
@@ -84,6 +106,9 @@ pub struct Types {
     pub element: Vec<TypeId>,
     /// How many elements an array holds. Zero for everything else.
     pub count: Vec<u32>,
+    /// Which module named this type, which decides how a reference from
+    /// another module has to spell it. The root for anything unnamed.
+    pub module: Vec<ModuleId>,
     pub name: Vec<StringId>,
     pub size: Vec<u32>,
     pub alignment: Vec<u32>,
@@ -94,6 +119,7 @@ pub struct Types {
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Structs {
     pub name: Vec<StringId>,
+    pub module: Vec<ModuleId>,
     pub type_id: Vec<TypeId>,
     pub field_start: Vec<u32>,
     pub field_count: Vec<u32>,
@@ -115,6 +141,7 @@ pub struct Fields {
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Functions {
     pub name: Vec<StringId>,
+    pub module: Vec<ModuleId>,
     pub owner: Vec<StructId>,
     pub parameter_start: Vec<u32>,
     pub parameter_count: Vec<u32>,
@@ -205,6 +232,8 @@ pub struct FieldAssignments {
 pub struct Tables {
     pub target: StringId,
     pub strings: Strings,
+    pub modules: Modules,
+    pub unresolved_imports: UnresolvedImports,
     pub types: Types,
     pub structs: Structs,
     pub fields: Fields,
@@ -218,10 +247,19 @@ pub struct Tables {
     pub field_assignments: FieldAssignments,
 }
 
+/// Every declaration names a module, so the root exists from the start and a
+/// program that is one file simply never gains a second.
 pub fn empty_tables() -> Tables {
     Tables {
         target: StringId(crate::handles::NO_INDEX),
         strings: Strings::default(),
+        modules: Modules {
+            name: vec![StringId(crate::handles::NO_INDEX)],
+            path: vec![StringId(crate::handles::NO_INDEX)],
+            unresolved_start: vec![0],
+            unresolved_count: vec![0],
+        },
+        unresolved_imports: UnresolvedImports::default(),
         types: Types::default(),
         structs: Structs::default(),
         fields: Fields::default(),
@@ -255,6 +293,28 @@ pub fn string_bytes(strings: &Strings, id: StringId) -> &[u8] {
 
 pub fn type_count(types: &Types) -> usize {
     types.kind.len()
+}
+
+pub fn module_count(modules: &Modules) -> usize {
+    modules.name.len()
+}
+
+/// Whether the program is more than one Zig file. A program that is one file
+/// has one namespace, so its port needs no module tree to keep names apart.
+pub fn has_submodules(modules: &Modules) -> bool {
+    module_count(modules) > 1
+}
+
+pub fn module_unresolved(modules: &Modules, id: ModuleId) -> std::ops::Range<usize> {
+    let index = id.0 as usize;
+    let (Some(&start), Some(&count)) = (
+        modules.unresolved_start.get(index),
+        modules.unresolved_count.get(index),
+    ) else {
+        return 0..0;
+    };
+    let start = start as usize;
+    start..start.saturating_add(count as usize)
 }
 
 pub fn struct_count(structs: &Structs) -> usize {

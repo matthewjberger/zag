@@ -1,5 +1,6 @@
 use crate::handles::{
-    AllocatorSourceId, CallId, FieldId, FunctionId, MemoryOperationId, StringId, StructId, TypeId,
+    AllocatorSourceId, CallId, FieldId, FunctionId, MemoryOperationId, ModuleId, StringId,
+    StructId, TypeId,
 };
 use crate::tables::{
     AllocatorSourceKind, AssignmentSource, MemoryOperationKind, PlaceKind, Tables, TypeKind,
@@ -182,11 +183,24 @@ fn assignment_source_from_raw(value: u32) -> Result<AssignmentSource, DecodeErro
     }
 }
 
+fn encode_modules(out: &mut Vec<u8>, tables: &Tables) {
+    let modules = &tables.modules;
+    write_u32_column(out, &raw_from(&modules.name, |value| value.0));
+    write_u32_column(out, &raw_from(&modules.path, |value| value.0));
+    write_u32_column(out, &modules.unresolved_start);
+    write_u32_column(out, &modules.unresolved_count);
+
+    let unresolved = &tables.unresolved_imports;
+    write_u32_column(out, &raw_from(&unresolved.owner, |value| value.0));
+    write_u32_column(out, &raw_from(&unresolved.name, |value| value.0));
+}
+
 fn encode_types(out: &mut Vec<u8>, tables: &Tables) {
     let types = &tables.types;
     write_u32_column(out, &raw_from(&types.kind, |value| *value as u32));
     write_u32_column(out, &raw_from(&types.element, |value| value.0));
     write_u32_column(out, &types.count);
+    write_u32_column(out, &raw_from(&types.module, |value| value.0));
     write_u32_column(out, &raw_from(&types.name, |value| value.0));
     write_u32_column(out, &types.size);
     write_u32_column(out, &types.alignment);
@@ -197,6 +211,7 @@ fn encode_types(out: &mut Vec<u8>, tables: &Tables) {
 fn encode_structs(out: &mut Vec<u8>, tables: &Tables) {
     let structs = &tables.structs;
     write_u32_column(out, &raw_from(&structs.name, |value| value.0));
+    write_u32_column(out, &raw_from(&structs.module, |value| value.0));
     write_u32_column(out, &raw_from(&structs.type_id, |value| value.0));
     write_u32_column(out, &structs.field_start);
     write_u32_column(out, &structs.field_count);
@@ -218,6 +233,7 @@ fn encode_fields(out: &mut Vec<u8>, tables: &Tables) {
 fn encode_functions(out: &mut Vec<u8>, tables: &Tables) {
     let functions = &tables.functions;
     write_u32_column(out, &raw_from(&functions.name, |value| value.0));
+    write_u32_column(out, &raw_from(&functions.module, |value| value.0));
     write_u32_column(out, &raw_from(&functions.owner, |value| value.0));
     write_u32_column(out, &functions.parameter_start);
     write_u32_column(out, &functions.parameter_count);
@@ -286,12 +302,42 @@ pub fn encode(tables: &Tables) -> Vec<u8> {
     write_u32(&mut out, tables.target.0);
     write_byte_column(&mut out, &tables.strings.bytes);
     write_u32_column(&mut out, &tables.strings.offsets);
+    encode_modules(&mut out, tables);
     encode_types(&mut out, tables);
     encode_structs(&mut out, tables);
     encode_fields(&mut out, tables);
     encode_functions(&mut out, tables);
     encode_side_tables(&mut out, tables);
     out
+}
+
+fn decode_modules(
+    bytes: &[u8],
+    cursor: &mut usize,
+    tables: &mut Tables,
+) -> Result<(), DecodeError> {
+    let modules = &mut tables.modules;
+    modules.name = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(StringId)
+        .collect();
+    modules.path = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(StringId)
+        .collect();
+    modules.unresolved_start = read_u32_column(bytes, cursor)?;
+    modules.unresolved_count = read_u32_column(bytes, cursor)?;
+
+    let unresolved = &mut tables.unresolved_imports;
+    unresolved.owner = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(ModuleId)
+        .collect();
+    unresolved.name = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(StringId)
+        .collect();
+    Ok(())
 }
 
 fn decode_types(bytes: &[u8], cursor: &mut usize, tables: &mut Tables) -> Result<(), DecodeError> {
@@ -302,6 +348,10 @@ fn decode_types(bytes: &[u8], cursor: &mut usize, tables: &mut Tables) -> Result
         .map(TypeId)
         .collect();
     types.count = read_u32_column(bytes, cursor)?;
+    types.module = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(ModuleId)
+        .collect();
     types.name = read_u32_column(bytes, cursor)?
         .into_iter()
         .map(StringId)
@@ -322,6 +372,10 @@ fn decode_structs(
     structs.name = read_u32_column(bytes, cursor)?
         .into_iter()
         .map(StringId)
+        .collect();
+    structs.module = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(ModuleId)
         .collect();
     structs.type_id = read_u32_column(bytes, cursor)?
         .into_iter()
@@ -367,6 +421,10 @@ fn decode_functions(
     functions.name = read_u32_column(bytes, cursor)?
         .into_iter()
         .map(StringId)
+        .collect();
+    functions.module = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(ModuleId)
         .collect();
     functions.owner = read_u32_column(bytes, cursor)?
         .into_iter()
@@ -523,6 +581,7 @@ pub fn decode(bytes: &[u8]) -> Result<Tables, DecodeError> {
     tables.target = StringId(read_u32(bytes, &mut cursor)?);
     tables.strings.bytes = read_byte_column(bytes, &mut cursor)?;
     tables.strings.offsets = read_u32_column(bytes, &mut cursor)?;
+    decode_modules(bytes, &mut cursor, &mut tables)?;
     decode_types(bytes, &mut cursor, &mut tables)?;
     decode_structs(bytes, &mut cursor, &mut tables)?;
     decode_fields(bytes, &mut cursor, &mut tables)?;

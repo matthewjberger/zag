@@ -259,6 +259,24 @@ pub fn main() !void {
         }
     }
 
+    // What this file pulls in. The caller follows these to find the rest of the
+    // program, and uses the name each one is bound to so that `buffer.Buffer`
+    // can be read as a type in the buffer module.
+    for (0..tree.nodes.len) |raw| {
+        const node: Ast.Node.Index = @enumFromInt(raw);
+        const declaration = tree.fullVarDecl(node) orelse continue;
+        if (innermost(functions.items, tree.firstToken(node)) != null) continue;
+        const initializer = declaration.ast.init_node.unwrap() orelse continue;
+        const text = try collapse(arena, tree.getNodeSource(initializer));
+        const opened = std.mem.indexOf(u8, text, "@import(\"") orelse continue;
+        const rest = text[opened + "@import(\"".len ..];
+        const closed = std.mem.indexOfScalar(u8, rest, '"') orelse continue;
+        std.debug.print("import {s} path={s}\n", .{
+            tree.tokenSlice(declaration.ast.mut_token + 1),
+            rest[0..closed],
+        });
+    }
+
     for (0..tree.nodes.len) |raw| {
         const node: Ast.Node.Index = @enumFromInt(raw);
         const declaration = tree.fullVarDecl(node) orelse continue;

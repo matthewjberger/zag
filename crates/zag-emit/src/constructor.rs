@@ -254,7 +254,7 @@ pub fn lower_constructor(
     ast: &mut Ast,
     tables: &Tables,
     ownership: &Ownership,
-    lowering: &Lowering,
+    lowering: Lowering,
     owner: StructId,
 ) -> Option<NodeId> {
     let function = writable_init(tables, ownership, owner)?;

@@ -1,3 +1,6 @@
+pub mod project;
+
+pub use project::read_project;
 use zag_emit::Output;
 use zag_facts::tables::Tables;
 use zag_facts::validate::{Violation, validate};
@@ -30,16 +33,53 @@ fn run_zig(arguments: &[&std::ffi::OsStr]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stderr).into_owned())
 }
 
-/// Asks the compiler twice. Reflection resolves declarations and layout with
-/// no linker involved, and the parser reaches the dataflow and the private
-/// declarations reflection cannot see.
-pub fn read_zig(path: &std::path::Path) -> Result<zag_frontend::program::Program, String> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .ok_or("the workspace root is two directories up")?;
-    let reflect = root.join("tools").join("reflect").join("main.zig");
-    let extract = root.join("tools").join("extract").join("main.zig");
+/// A path with `.` and `..` taken out, so two spellings of one file compare
+/// equal and the crawl does not read it twice.
+pub(crate) fn normalise(path: &std::path::Path) -> std::path::PathBuf {
+    let absolute = std::env::current_dir()
+        .map(|directory| directory.join(path))
+        .unwrap_or_else(|_| path.to_path_buf());
+    let mut out = std::path::PathBuf::new();
+    for part in absolute.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// The two Zig tools travel inside this crate rather than beside it, so an
+/// installed `zag` has them and a published one is not missing half of itself.
+/// They are written out on demand, because zig is given a path rather than a
+/// string.
+const REFLECT_SOURCE: &str = include_str!("../tools/reflect/main.zig");
+const EXTRACT_SOURCE: &str = include_str!("../tools/extract/main.zig");
+
+fn tool_path(name: &str, source: &str) -> Result<std::path::PathBuf, String> {
+    let directory = std::env::temp_dir()
+        .join("zag-tools")
+        .join(env!("CARGO_PKG_VERSION"))
+        .join(name);
+    std::fs::create_dir_all(&directory)
+        .map_err(|cause| format!("{}: {cause}", directory.display()))?;
+    let path = directory.join("main.zig");
+    // Rewritten only when it differs, so zig's own cache keeps its hits.
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(source) {
+        std::fs::write(&path, source).map_err(|cause| format!("{}: {cause}", path.display()))?;
+    }
+    Ok(path)
+}
+
+/// Asks the compiler twice about one file. Reflection resolves declarations
+/// and layout with no linker involved, and the parser reaches the dataflow and
+/// the private declarations reflection cannot see.
+pub(crate) fn ask_zig(path: &std::path::Path) -> Result<(String, String), String> {
+    let reflect = tool_path("reflect", REFLECT_SOURCE)?;
+    let extract = tool_path("extract", EXTRACT_SOURCE)?;
     let reflection = run_zig(&[
         "build-obj".as_ref(),
         "-fno-emit-bin".as_ref(),
@@ -54,12 +94,21 @@ pub fn read_zig(path: &std::path::Path) -> Result<zag_frontend::program::Program
         "--".as_ref(),
         path.as_ref(),
     ])?;
-    if !extraction.contains("function ") && !extraction.contains("container ") {
+    if !extraction.contains("function ")
+        && !extraction.contains("container ")
+        && !extraction.contains("import ")
+    {
         return Err(format!(
             "the parser reported nothing for {}:\n{extraction}",
             path.display()
         ));
     }
+    Ok((extraction, reflection))
+}
+
+/// One file, read on its own. `read_project` follows what it imports.
+pub fn read_zig(path: &std::path::Path) -> Result<zag_frontend::program::Program, String> {
+    let (extraction, reflection) = ask_zig(path)?;
     Ok(zag_frontend::program::parse(&extraction, &reflection))
 }
 

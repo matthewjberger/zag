@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <a href="https://github.com/matthewjberger/zag"><img alt="github" src="https://img.shields.io/badge/github-matthewjberger/zag-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20"></a>
   <img alt="license" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-fc8d62?style=for-the-badge&labelColor=555555" height="20">
 </p>
@@ -26,7 +26,7 @@ A Rust toolchain and [`just`](https://github.com/casey/just).
 git clone https://github.com/matthewjberger/zag
 cd zag
 
-just read path/to.zig   # port any Zig file, and print the Rust and the report
+just read path/to.zig   # port a Zig program from its root file, and print it
 just names              # the example programs
 just port netpacket     # port one of them
 just check              # format, lint, and the whole suite
@@ -55,6 +55,8 @@ cd examples/wordcount && zig build run
 and an error set.
 `telemetry` keeps a fixed array a fixed array and puts the ownership wrapper
 inside the option rather than around it.
+`ledger` is four files where the struct, the allocation, and the free each live
+in a different one.
 `conflict` hands one allocator parameter a heap from one caller and an arena
 from another, so it ports to nothing usable, which is the finding rather than a
 failure. [examples/README.md](examples/README.md) covers each in full.
@@ -65,8 +67,8 @@ Those programs are how zag is checked, and the chain runs from real Zig to
 compiled Rust with a compiler at both ends.
 
 `zig build` proves each example is a real program rather than a snippet shaped
-to suit the analysis. `tools/reflect` then asks the compiler what that program
-declares, and `tools/extract` parses it for the dataflow, so every struct,
+to suit the analysis. `crates/zag/tools/reflect` then asks the compiler what that program
+declares, and `crates/zag/tools/extract` parses it for the dataflow, so every struct,
 layout, field offset, function, parameter, call edge, memory operation, and
 field assignment in the fact tables is held to what the compiler found. The
 pipeline ports the result, and `rustc` compiles the port with constants
@@ -90,9 +92,11 @@ function, the free is in another, and which allocator reached either is settled
 by a caller somewhere else entirely. A file-at-a-time port has to guess, and a
 wrong guess produces a port that compiles and leaks.
 
-So the unit of work is the program. The pipeline builds a fact database first,
-runs whole-program passes over it, and only then emits Rust, with each decision
-carrying the evidence that produced it.
+So the unit of work is the program. `zag read` takes a root file and follows
+`@import` from it, so the fact database covers every file the program is made
+of rather than the one it was pointed at. The pipeline builds that database
+first, runs whole-program passes over it, and only then emits Rust, with each
+decision carrying the evidence that produced it.
 
 ```
 Buffer.data
@@ -157,11 +161,22 @@ later.
 
 ## The Zig side
 
-The frontend asks the compiler twice. `tools/reflect` resolves declarations and
-layout through comptime reflection, and is analysed rather than linked, so no
-platform's libc is involved. `tools/extract` parses the file for the dataflow
-and for the private declarations reflection cannot see. `zag-frontend` merges
-the two into fact tables.
+The frontend asks the compiler twice per file. `crates/zag/tools/reflect`
+resolves declarations and layout through comptime reflection, and is analysed
+rather than linked, so no platform's libc is involved.
+`crates/zag/tools/extract` parses the file for the dataflow, for the private
+declarations reflection cannot see, and for what it imports. Following those
+imports from the root file is what turns one file into a program, and
+`zag-frontend` merges every file into one set of fact tables.
+
+Each file becomes a Rust module, because a Zig file is a struct and that is the
+same shape. A type named across a file boundary is spelled with the path to the
+module that declares it, so two files may each declare a `Buffer` without either
+having to be renamed. A program that is one file has one namespace, so its port
+has no module tree at all.
+
+An `@import` the crawl cannot turn into a file is reported rather than dropped,
+because a program read with a hole in it is a different program.
 
 Both read syntax rather than semantics. `x.dupe(...)` is an allocation because
 of how it is spelled, not because `x` resolved to an allocator, so a program

@@ -34,6 +34,7 @@ pub enum NodeKind {
     TypeArray = 23,
     TypeResult = 24,
     Discard = 25,
+    Module = 26,
 }
 
 #[repr(u32)]
