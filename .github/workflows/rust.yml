@@ -19,6 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # The reflection tests check the hand-built fact tables against what the
+      # compiler resolved. Without zig they skip themselves, so it is installed
+      # here rather than left to chance.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

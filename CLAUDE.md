@@ -41,9 +41,15 @@ Dependencies point one way. `zag-facts` and `zag-render` are leaves.
 
 `examples/` holds Zig programs that build on their own, and
 `zag-facts/src/examples/` holds the tables each one would produce. They are the
-integration layer over unit tests that cover each pass alone, and they are kept
-in step by hand until the frontend lands. `zag-verify` compiles every port they
-produce, so the layout assertions run in the build.
+integration layer over unit tests that cover each pass alone. `zag-verify`
+compiles every port they produce, so the layout assertions run in the build.
+
+`tools/reflect` asks the compiler what an example actually declares, and
+`crates/zag/tests/reflection.rs` holds the tables to that answer: structs,
+layout, field order, offsets, and public function arity. Never hand-write an
+offset. Read it off `just reflect <name>`, because Zig reorders an `auto`
+layout. The dataflow in the tables, which call allocates what and which
+function frees it, is out of reflection's reach and stays hand supplied.
 
 ## Working here
 

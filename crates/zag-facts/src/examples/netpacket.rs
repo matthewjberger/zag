@@ -29,8 +29,10 @@ pub fn tables() -> Tables {
 
     let header_type = struct_type(&tables, header);
     let packet = declare_struct(&mut tables, b"Packet", 32, 8, 0);
-    declare_field(&mut tables, packet, b"header", header_type, 0);
-    let packet_payload = declare_field(&mut tables, packet, b"payload", payload, 16);
+    // Zig reorders an auto layout, so the header follows the slice in memory
+    // while staying first in declaration order.
+    declare_field(&mut tables, packet, b"header", header_type, 16);
+    let packet_payload = declare_field(&mut tables, packet, b"payload", payload, 0);
     let packet_type = struct_type(&tables, packet);
     let packet_pointer = push_pointer_type(&mut tables, packet_type);
 

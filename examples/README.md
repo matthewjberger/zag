@@ -18,12 +18,21 @@ zig build run
 
 ## Porting one
 
-The Zig frontend does not exist yet, so nothing reads `src/main.zig`. The fact
-tables each program would produce are built by hand in
-`crates/zag-facts/src/examples/`, and the rest of the pipeline is real. Keeping
-the two in step is manual until the frontend lands, which is what
-`every_example_carries_a_zig_project_that_stands_on_its_own` and the tests
-beside it are guarding.
+The Zig frontend does not exist yet, so the fact tables each program would
+produce are built by hand in `crates/zag-facts/src/examples/`, and the rest of
+the pipeline is real.
+
+Those tables are not taken on trust. `tools/reflect` imports an example and
+asks the compiler what it resolved, and the tests compare the answer against
+the tables: every struct, its layout, every field in order with its offset,
+and every public function with its parameter count. A table that drifts from
+the program it claims to describe fails there. Run it by hand with
+`just reflect netpacket`.
+
+What reflection cannot reach is the dataflow, which call allocates what and
+which function frees it. That part is still hand supplied, and it is exactly
+the part that needs the compiler's semantic analysis rather than its type
+information.
 
 ```bash
 zag examples                                          # what is available
@@ -72,5 +81,10 @@ port cannot be finished until a person decides. That is the intended outcome.
 Add the directory with `build.zig`, `build.zig.zon`, and `src/main.zig`, and
 check it runs. Add a module under `crates/zag-facts/src/examples/` with the
 tables that program would produce, and register it in `examples.rs`. Run
+`just reflect <name>` and make the tables match what the compiler says, then
 `just examples` and read what comes out. The tests fail while a directory has
-no tables, or tables have no directory.
+no tables, tables have no directory, or the two disagree about a declaration.
+
+Zig lays an `auto` struct out in whatever order it likes, so field offsets are
+worth reading off `just reflect` rather than assuming. `netpacket` puts its
+header second in memory and first in declaration order.

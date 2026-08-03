@@ -68,6 +68,11 @@ examples:
         echo "ported $name"
     done
 
+# Prints what the Zig compiler resolved about one example, which is what the
+# hand-built fact tables are checked against. Needs zig on PATH
+reflect name:
+    zig run --dep target -Mroot=tools/reflect/main.zig -Mtarget=examples/{{name}}/src/main.zig
+
 # Builds and runs every example Zig program. Needs zig on PATH
 [windows]
 examples-zig:
