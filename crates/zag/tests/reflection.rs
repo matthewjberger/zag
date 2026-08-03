@@ -104,8 +104,11 @@ fn reflect(name: &str) -> Reflection {
         .join(name)
         .join("src")
         .join("main.zig");
+    // Analysed, never linked. The report arrives through `@compileError`, so
+    // this fails to compile on purpose and no platform's libc is involved.
     let output = Command::new("zig")
-        .arg("run")
+        .arg("build-obj")
+        .arg("-fno-emit-bin")
         .arg("--dep")
         .arg("target")
         .arg(format!("-Mroot={}", tool.display()))
