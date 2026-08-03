@@ -33,13 +33,13 @@ fn global_parameter_index(tables: &Tables, function: u32, parameter_index: u32) 
         return None;
     }
     let function = function as usize;
-    if function >= tables.functions.parameter_start.len() {
+    let start = *tables.functions.parameter_start.get(function)?;
+    let count = *tables.functions.parameter_count.get(function)?;
+    if parameter_index >= count {
         return None;
     }
-    if parameter_index >= tables.functions.parameter_count[function] {
-        return None;
-    }
-    Some(tables.functions.parameter_start[function] as usize + parameter_index as usize)
+    let slot = start as usize + parameter_index as usize;
+    (slot < parameter_count(&tables.parameters)).then_some(slot)
 }
 
 fn class_of_source(
@@ -56,8 +56,16 @@ fn class_of_source(
         AllocatorSourceKind::Arena => AllocatorClass::Arena,
         AllocatorSourceKind::Unknown => AllocatorClass::Conflicting,
         AllocatorSourceKind::Parameter => {
-            let function = tables.allocator_sources.function[index].0;
-            let parameter_index = tables.allocator_sources.parameter_index[index];
+            let (Some(function), Some(parameter_index)) = (
+                tables
+                    .allocator_sources
+                    .function
+                    .get(index)
+                    .map(|value| value.0),
+                tables.allocator_sources.parameter_index.get(index).copied(),
+            ) else {
+                return AllocatorClass::Conflicting;
+            };
             match global_parameter_index(tables, function, parameter_index) {
                 Some(slot) => parameter_class[slot],
                 None => AllocatorClass::Conflicting,
@@ -75,16 +83,17 @@ pub fn resolve_allocator_provenance(tables: &Tables) -> Provenance {
         let mut changed = false;
         for row in 0..tables.call_arguments.call.len() {
             let call = tables.call_arguments.call[row].0 as usize;
-            if call >= tables.calls.callee.len() {
+            let (Some(callee), Some(parameter_index), Some(source)) = (
+                tables.calls.callee.get(call).map(|value| value.0),
+                tables.call_arguments.parameter_index.get(row).copied(),
+                tables.call_arguments.source.get(row).copied(),
+            ) else {
                 continue;
-            }
-            let callee = tables.calls.callee[call].0;
-            let parameter_index = tables.call_arguments.parameter_index[row];
+            };
             let Some(slot) = global_parameter_index(tables, callee, parameter_index) else {
                 continue;
             };
-            let contributed =
-                class_of_source(tables, &parameter_class, tables.call_arguments.source[row]);
+            let contributed = class_of_source(tables, &parameter_class, source);
             let merged = join(parameter_class[slot], contributed);
             if merged != parameter_class[slot] {
                 parameter_class[slot] = merged;

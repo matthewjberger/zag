@@ -207,6 +207,18 @@ fn a_call_argument_naming_a_parameter_that_does_not_exist_is_reported() {
 }
 
 #[test]
+fn a_free_of_a_field_that_names_no_field_is_reported() {
+    let mut tables = example_tables();
+    tables.memory_operations.place_field[1] = zag_facts::FieldId(NO_INDEX);
+    let violations = validate(&tables).expect_err("a field place must name a field");
+    assert!(
+        violations
+            .iter()
+            .any(|violation| matches!(violation, Violation::PlaceWithoutField { row: 1 }))
+    );
+}
+
+#[test]
 fn an_absent_allocator_on_a_memory_operation_is_allowed() {
     let mut tables = example_tables();
     tables.memory_operations.allocator[0] = zag_facts::AllocatorSourceId(NO_INDEX);

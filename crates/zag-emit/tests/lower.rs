@@ -15,6 +15,15 @@ use zag_render::ast::{
 };
 use zag_render::render;
 
+fn analysis_with(
+    tables: &zag_facts::tables::Tables,
+    ownership: Ownership,
+) -> zag_analysis::Analysis {
+    let mut analysis = analyze(tables);
+    analysis.ownership = ownership;
+    analysis
+}
+
 fn ownership_of(classes: &[OwnershipClass]) -> Ownership {
     Ownership {
         class: classes.to_vec(),
@@ -256,7 +265,7 @@ fn a_struct_with_no_fields_still_lowers() {
 fn the_report_names_every_field_once() {
     let tables = example_tables();
     let analysis = analyze(&tables);
-    let report = String::from_utf8(render_report(&tables, &analysis.ownership)).expect("text");
+    let report = String::from_utf8(render_report(&tables, &analysis)).expect("text");
     for name in ["Buffer.data", "Header.magic", "Node.label", "Cache.entries"] {
         assert_eq!(
             report.matches(name).count(),
@@ -268,9 +277,26 @@ fn the_report_names_every_field_once() {
 
 #[test]
 fn the_report_covers_an_empty_program() {
-    let report = render_report(&empty_tables(), &ownership_of(&[]));
+    let tables = empty_tables();
+    let report = render_report(&tables, &analysis_with(&tables, ownership_of(&[])));
     let text = String::from_utf8(report).expect("text");
     assert!(text.contains("fields: 0"), "{text}");
+}
+
+#[test]
+fn the_report_says_so_when_allocator_provenance_did_not_settle() {
+    let tables = example_tables();
+    let mut analysis = analyze(&tables);
+    assert!(analysis.provenance.converged);
+    let settled = String::from_utf8(render_report(&tables, &analysis)).expect("text");
+    assert!(!settled.contains("warning"), "{settled}");
+
+    analysis.provenance.converged = false;
+    let unsettled = String::from_utf8(render_report(&tables, &analysis)).expect("text");
+    assert!(
+        unsettled.contains("allocator provenance did not reach a fixed point"),
+        "{unsettled}"
+    );
 }
 
 #[test]
@@ -278,8 +304,8 @@ fn the_report_is_deterministic() {
     let tables = example_tables();
     let analysis = analyze(&tables);
     assert_eq!(
-        render_report(&tables, &analysis.ownership),
-        render_report(&tables, &analysis.ownership)
+        render_report(&tables, &analysis),
+        render_report(&tables, &analysis)
     );
 }
 
@@ -303,7 +329,8 @@ fn every_ownership_class_has_a_report_word() {
         let field_name = intern(&mut tables.strings, format!("field{index}").as_bytes());
         push_field(&mut tables, owner, field_name, slice, index as u32 * 16);
     }
-    let report = render_report(&tables, &ownership_of(&classes));
+    let analysis = analysis_with(&tables, ownership_of(&classes));
+    let report = render_report(&tables, &analysis);
     let text = String::from_utf8(report).expect("text");
     for word in ["value", "owned", "borrowed", "static", "arena", "unknown"] {
         assert!(text.contains(&format!("class: {word}")), "{text}");

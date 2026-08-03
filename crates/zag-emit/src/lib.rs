@@ -15,6 +15,6 @@ pub fn generate(tables: &Tables, analysis: &Analysis) -> Result<Output, RenderEr
     let ast = lower::lower(tables, &analysis.ownership);
     Ok(Output {
         source: zag_render::render(&ast)?,
-        report: report::render_report(tables, &analysis.ownership),
+        report: report::render_report(tables, analysis),
     })
 }

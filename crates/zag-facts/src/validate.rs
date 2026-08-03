@@ -46,6 +46,9 @@ pub enum Violation {
         function: u32,
         parameter_index: u32,
     },
+    PlaceWithoutField {
+        row: usize,
+    },
 }
 
 pub fn validate(tables: &Tables) -> Result<(), Vec<Violation>> {
@@ -56,6 +59,7 @@ pub fn validate(tables: &Tables) -> Result<(), Vec<Violation>> {
     check_field_ranges(tables, &mut violations);
     check_parameter_ranges(tables, &mut violations);
     check_parameter_indices(tables, &mut violations);
+    check_places(tables, &mut violations);
     check_call_order(tables, &mut violations);
     if violations.is_empty() {
         Ok(())
@@ -683,6 +687,24 @@ fn check_parameter_ranges(tables: &Tables, violations: &mut Vec<Violation>) {
         violations.push(Violation::ParameterRangeMismatch {
             owner: function_count(functions),
         });
+    }
+}
+
+/// A memory operation on a field of a parameter that names no field is dropped
+/// by the ownership pass, so the free it records would disappear silently.
+fn check_places(tables: &Tables, violations: &mut Vec<Violation>) {
+    let operations = &tables.memory_operations;
+    for row in 0..operations.place.len() {
+        if operations.place[row] != crate::tables::PlaceKind::FieldOfParameter {
+            continue;
+        }
+        let names_a_field = operations
+            .place_field
+            .get(row)
+            .is_some_and(|field| field.0 != NO_INDEX);
+        if !names_a_field {
+            violations.push(Violation::PlaceWithoutField { row });
+        }
     }
 }
 

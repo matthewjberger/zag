@@ -269,7 +269,7 @@ fn decide(free: FreeFacts, assignment: AssignmentFacts) -> (OwnershipClass, Conf
     } = assignment;
     let allocation_only = only(has_allocation, [has_parameter, has_literal, has_unknown]);
     if has_allocation && allocator == AllocatorClass::Arena {
-        let confidence = if allocation_only {
+        let confidence = if allocation_only && !free.freed {
             Confidence::High
         } else {
             Confidence::Medium

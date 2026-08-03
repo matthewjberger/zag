@@ -10,23 +10,28 @@ pub struct CallGraph {
 
 pub fn build_call_graph(tables: &Tables) -> CallGraph {
     let functions = function_count(&tables.functions);
-    let calls = call_count(&tables.calls);
+    let edges: Vec<(usize, FunctionId, CallId)> = (0..call_count(&tables.calls))
+        .filter_map(|row| {
+            let caller = tables.calls.caller[row].0 as usize;
+            let callee = *tables.calls.callee.get(row)?;
+            (caller < functions).then_some((caller, callee, CallId(row as u32)))
+        })
+        .collect();
     let mut counts = vec![0u32; functions];
-    for caller in &tables.calls.caller {
-        counts[caller.0 as usize] += 1;
+    for (caller, _, _) in &edges {
+        counts[*caller] += 1;
     }
     let mut edge_start = vec![0u32; functions + 1];
     for index in 0..functions {
         edge_start[index + 1] = edge_start[index] + counts[index];
     }
     let mut cursor = edge_start.clone();
-    let mut edge_target = vec![FunctionId(zag_facts::NO_INDEX); calls];
-    let mut edge_call = vec![CallId(zag_facts::NO_INDEX); calls];
-    for row in 0..calls {
-        let caller = tables.calls.caller[row].0 as usize;
+    let mut edge_target = vec![FunctionId(zag_facts::NO_INDEX); edges.len()];
+    let mut edge_call = vec![CallId(zag_facts::NO_INDEX); edges.len()];
+    for (caller, callee, call) in edges {
         let slot = cursor[caller] as usize;
-        edge_target[slot] = tables.calls.callee[row];
-        edge_call[slot] = CallId(row as u32);
+        edge_target[slot] = callee;
+        edge_call[slot] = call;
         cursor[caller] += 1;
     }
     CallGraph {

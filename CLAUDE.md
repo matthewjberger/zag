@@ -23,8 +23,10 @@ These are load-bearing. Breaking one is a design change, not a refactor.
   expected to produce. A pass that cannot decide something must say so and
   record the evidence. Never widen a rule to make a fixture pass.
 - Nothing panics on a corrupt fact file. Accessors are total, the validator
-  uses checked arithmetic and `get`, and property tests feed it both damaged
-  tables and arbitrary bytes.
+  uses checked arithmetic, the passes index sibling columns through `get`
+  rather than assuming the validator ran, and property tests feed both damaged
+  tables and arbitrary bytes. A row the passes cannot make sense of is dropped
+  and the validator reports why.
 
 ## Layout
 

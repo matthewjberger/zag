@@ -1,3 +1,4 @@
+use zag_analysis::Analysis;
 use zag_analysis::ownership::{
     Confidence, EvidenceKind, Ownership, OwnershipClass, field_evidence,
 };
@@ -77,7 +78,7 @@ fn write_field(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership, row: u
     }
 }
 
-pub fn render_report(tables: &Tables, ownership: &Ownership) -> Vec<u8> {
+pub fn render_report(tables: &Tables, analysis: &Analysis) -> Vec<u8> {
     let mut out = Vec::new();
     write_line(&mut out, &[b"zag ownership report"]);
     write_line(
@@ -86,9 +87,16 @@ pub fn render_report(tables: &Tables, ownership: &Ownership) -> Vec<u8> {
     );
     let fields = field_count(&tables.fields);
     write_line(&mut out, &[b"fields: ", fields.to_string().as_bytes()]);
+    if !analysis.provenance.converged {
+        write_line(
+            &mut out,
+            &[b"warning: allocator provenance did not reach a fixed point, so every"],
+        );
+        write_line(&mut out, &[b"         allocator below may be understated"]);
+    }
     for row in 0..fields {
         out.push(b'\n');
-        write_field(&mut out, tables, ownership, row);
+        write_field(&mut out, tables, &analysis.ownership, row);
     }
     out
 }

@@ -17,6 +17,27 @@ Zag is under construction. Everything described below runs and is covered by
 the test suite, but the Zig frontend does not exist yet, so hand-built fact
 tables stand in for a real compilation.
 
+## Getting started
+
+A Rust toolchain and [`just`](https://github.com/casey/just).
+
+```bash
+git clone https://github.com/matthewjberger/zag
+cd zag
+
+just fixture   # port the worked example
+just report    # show what the analysis decided, and why
+just check     # format, lint, and the whole suite
+```
+
+`just fixture` writes `target/example.rs` and `target/example.report.txt`.
+Run `just` with no arguments to list every recipe.
+
+`fixtures/example.zig` is the Zig the worked example stands for. Nothing reads
+it. `zag-facts` hand-builds the tables that source would yield, and the rest of
+the pipeline is real. Every ownership class the analysis can reach appears in
+it exactly once.
+
 ## Why not file by file
 
 Whether a Zig field becomes `Box<[u8]>`, `&'a [u8]`, or `&'bump [u8]` is not
@@ -60,7 +81,8 @@ Ownership classification crosses free sites with assignment sources and the
 resolved allocator, and lands on owned, borrowed, static, arena, value, or
 unknown, each with a confidence. Unknown is a first class result, so a field
 the analysis cannot decide becomes `Option<core::ptr::NonNull<T>>` with the
-reason recorded.
+reason recorded. Evidence that contradicts itself, such as an arena allocation
+with an explicit free, lowers the confidence rather than picking a side.
 
 Struct lifetimes fall out of the field classifications. A struct with a
 borrowed field gets `<'a>`, one with an arena field gets `<'bump>`.
@@ -98,21 +120,6 @@ is already the structure of arrays this crate expects.
 That side stays deliberately small and free of analysis, because it is the part
 upstream Zig will keep breaking.
 
-## Getting started
-
-A Rust toolchain and [`just`](https://github.com/casey/just).
-
-```bash
-just fixture   # port the worked example
-just report    # show what the analysis decided, and why
-just check     # format, lint, and the whole suite
-```
-
-`fixtures/example.zig` is the Zig the worked example stands for. Nothing reads
-it. `zag-facts` hand-builds the tables that source would yield, and the rest of
-the pipeline is real. Every ownership class the analysis can reach appears in
-it exactly once.
-
 ## Tests
 
 The fact tables are the only input to anything downstream, so the analysis, the
@@ -122,8 +129,9 @@ Zig compiler anywhere.
 The validator is what a data-oriented design uses in place of encapsulation.
 Table invariants that a class would normally hide behind a private field, such
 as ranges that must tile and columns that must be sorted, are checked there and
-reported as data. It has to survive a corrupt fact file without panicking, so
-property tests feed it damaged tables and arbitrary bytes.
+reported as data. Nothing downstream may panic on a fact file that fails those
+checks, so property tests feed the validator and the passes damaged tables and
+arbitrary bytes.
 
 The wire format, the provenance lattice, and the repair engine carry property
 tests of their own. Pipeline output is compared byte for byte against
