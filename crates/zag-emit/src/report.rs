@@ -57,21 +57,44 @@ fn function_name(tables: &Tables, function: FunctionId) -> Option<&[u8]> {
 }
 
 fn write_field(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership, row: usize) {
-    let owner = tables.fields.owner[row].0 as usize;
-    let owner_name = string_bytes(&tables.strings, tables.structs.name[owner]);
-    let field_name = string_bytes(&tables.strings, tables.fields.name[row]);
+    let owner = tables
+        .fields
+        .owner
+        .get(row)
+        .map(|owner| owner.0 as usize)
+        .unwrap_or(usize::MAX);
+    let owner_name = tables
+        .structs
+        .name
+        .get(owner)
+        .map(|name| string_bytes(&tables.strings, *name))
+        .unwrap_or(b"");
+    let field_name = tables
+        .fields
+        .name
+        .get(row)
+        .map(|name| string_bytes(&tables.strings, *name))
+        .unwrap_or(b"");
+    let (Some(&class), Some(&confidence)) =
+        (ownership.class.get(row), ownership.confidence.get(row))
+    else {
+        return;
+    };
+    out.push(b'\n');
     write_line(out, &[owner_name, b".", field_name]);
-    write_line(out, &[b"  class: ", class_text(ownership.class[row])]);
-    write_line(
-        out,
-        &[
-            b"  confidence: ",
-            confidence_text(ownership.confidence[row]),
-        ],
-    );
+    write_line(out, &[b"  class: ", class_text(class)]);
+    write_line(out, &[b"  confidence: ", confidence_text(confidence)]);
     for slot in field_evidence(ownership, FieldId(row as u32)) {
-        let text = evidence_text(ownership.evidence_kind[slot]);
-        match function_name(tables, ownership.evidence_function[slot]) {
+        let Some(&kind) = ownership.evidence_kind.get(slot) else {
+            continue;
+        };
+        let text = evidence_text(kind);
+        let function = ownership
+            .evidence_function
+            .get(slot)
+            .copied()
+            .unwrap_or(FunctionId(NO_INDEX));
+        match function_name(tables, function) {
             Some(name) => write_line(out, &[b"  evidence: ", text, b" (", name, b")"]),
             None => write_line(out, &[b"  evidence: ", text]),
         }
@@ -95,7 +118,6 @@ pub fn render_report(tables: &Tables, analysis: &Analysis) -> Vec<u8> {
         write_line(&mut out, &[b"         allocator below may be understated"]);
     }
     for row in 0..fields {
-        out.push(b'\n');
         write_field(&mut out, tables, &analysis.ownership, row);
     }
     out

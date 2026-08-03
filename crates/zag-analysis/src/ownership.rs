@@ -139,12 +139,11 @@ fn closure_for(
         return None;
     }
     if closures[owner].is_none() {
-        let deinit = tables.structs.deinit[owner];
-        if deinit.0 == NO_INDEX {
-            closures[owner] = Some(Vec::new());
-        } else {
-            closures[owner] = Some(reachable_from(graph, deinit));
-        }
+        let deinit = tables.structs.deinit.get(owner).copied();
+        closures[owner] = match deinit {
+            Some(deinit) if deinit.0 != NO_INDEX => Some(reachable_from(graph, deinit)),
+            _ => Some(Vec::new()),
+        };
     }
     Some(owner)
 }
@@ -167,7 +166,12 @@ fn gather_free_facts(
     let resolved = closure_for(tables, graph, closures, owner);
     for slot in range {
         let row = index.free_rows[slot] as usize;
-        let function = tables.memory_operations.function[row];
+        let function = tables
+            .memory_operations
+            .function
+            .get(row)
+            .copied()
+            .unwrap_or(FunctionId(NO_INDEX));
         let inside = resolved
             .and_then(|owner| closures[owner].as_ref())
             .and_then(|reachable| reachable.get(function.0 as usize).copied())
@@ -201,21 +205,31 @@ fn gather_assignment_facts(
     };
     for entry in index.assignment_start[slot] as usize..index.assignment_start[slot + 1] as usize {
         let row = index.assignment_rows[entry] as usize;
-        let function = tables.field_assignments.function[row];
-        match tables.field_assignments.source[row] {
+        let Some(source) = tables.field_assignments.source.get(row).copied() else {
+            continue;
+        };
+        let function = tables
+            .field_assignments
+            .function
+            .get(row)
+            .copied()
+            .unwrap_or(FunctionId(NO_INDEX));
+        match source {
             AssignmentSource::Allocation => {
                 facts.has_allocation = true;
                 ownership
                     .evidence_kind
                     .push(EvidenceKind::AssignedFromAllocation);
-                let operation = tables.field_assignments.memory_operation[row].0 as usize;
-                if operation < tables.memory_operations.allocator.len() {
-                    let source = tables.memory_operations.allocator[operation];
-                    facts.allocator =
-                        join(facts.allocator, classify_source(tables, provenance, source));
-                } else {
-                    facts.allocator = join(facts.allocator, AllocatorClass::Conflicting);
-                }
+                let allocator = tables
+                    .field_assignments
+                    .memory_operation
+                    .get(row)
+                    .and_then(|operation| {
+                        tables.memory_operations.allocator.get(operation.0 as usize)
+                    })
+                    .map(|source| classify_source(tables, provenance, *source))
+                    .unwrap_or(AllocatorClass::Conflicting);
+                facts.allocator = join(facts.allocator, allocator);
             }
             AssignmentSource::Parameter => {
                 facts.has_parameter = true;
@@ -304,15 +318,16 @@ pub fn classify_ownership(
     for row in 0..field_count(&tables.fields) {
         let field = FieldId(row as u32);
         let start = ownership.evidence_kind.len() as u32;
-        let (class, confidence) = if is_reference_type(&tables.types, tables.fields.field_type[row])
-        {
-            let free =
-                gather_free_facts(tables, graph, &mut closures, &index, field, &mut ownership);
-            let assignment =
-                gather_assignment_facts(tables, provenance, &index, field, &mut ownership);
-            decide(free, assignment)
-        } else {
-            (OwnershipClass::Value, Confidence::High)
+        let (class, confidence) = match tables.fields.field_type.get(row).copied() {
+            Some(kind) if is_reference_type(&tables.types, kind) => {
+                let free =
+                    gather_free_facts(tables, graph, &mut closures, &index, field, &mut ownership);
+                let assignment =
+                    gather_assignment_facts(tables, provenance, &index, field, &mut ownership);
+                decide(free, assignment)
+            }
+            Some(_) => (OwnershipClass::Value, Confidence::High),
+            None => (OwnershipClass::Unknown, Confidence::Low),
         };
         ownership.class.push(class);
         ownership.confidence.push(confidence);

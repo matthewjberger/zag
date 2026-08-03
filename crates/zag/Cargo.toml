@@ -16,5 +16,8 @@ zag-emit.workspace = true
 zag-facts.workspace = true
 zag-render.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true

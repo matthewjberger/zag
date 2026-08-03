@@ -156,6 +156,49 @@ fn integer_widths_and_signedness_carry_across() {
 }
 
 #[test]
+fn an_integer_width_rust_lacks_widens_to_the_next_one_it_has() {
+    for (declared, expected) in [
+        (1u32, "u8"),
+        (3, "u8"),
+        (12, "u16"),
+        (48, "u64"),
+        (65, "u128"),
+    ] {
+        let source = one_field_source(
+            move |tables| push_integer_type(tables, declared, false),
+            OwnershipClass::Value,
+        );
+        assert!(
+            source.contains(&format!("pub value: {expected},")),
+            "u{declared} should widen to {expected}: {source}"
+        );
+    }
+}
+
+#[test]
+fn a_signed_narrow_integer_stays_signed_when_it_widens() {
+    let source = one_field_source(
+        |tables| push_integer_type(tables, 5, true),
+        OwnershipClass::Value,
+    );
+    assert!(source.contains("pub value: i8,"), "{source}");
+}
+
+#[test]
+fn an_integer_no_rust_type_can_hold_falls_back_to_the_unit_type() {
+    for declared in [0u32, 129, 4096] {
+        let source = one_field_source(
+            move |tables| push_integer_type(tables, declared, false),
+            OwnershipClass::Value,
+        );
+        assert!(
+            source.contains("pub value: (),"),
+            "u{declared} has no Rust spelling: {source}"
+        );
+    }
+}
+
+#[test]
 fn a_boolean_field_becomes_a_boolean() {
     let source = one_field_source(
         |tables| {

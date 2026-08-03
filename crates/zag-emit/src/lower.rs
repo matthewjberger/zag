@@ -21,15 +21,40 @@ fn integer_name(bit_width: u32, signed: bool) -> String {
     format!("{prefix}{bit_width}")
 }
 
+fn unit_type(ast: &mut Ast) -> NodeId {
+    let name = push_string(&mut ast.strings, b"()");
+    push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
+}
+
+/// Zig has integers of every width and Rust has five. A `u3` widens to the
+/// smallest Rust integer that holds it, which is what a hand port does, and a
+/// width no Rust integer holds has no spelling at all.
+fn rust_integer_width(bit_width: u32) -> Option<u32> {
+    if bit_width == 0 {
+        return None;
+    }
+    [8u32, 16, 32, 64, 128]
+        .into_iter()
+        .find(|width| *width >= bit_width)
+}
+
 fn lower_type_body(ast: &mut Ast, tables: &Tables, kind: TypeId, depth: u32) -> NodeId {
     let index = kind.0 as usize;
-    if depth >= MAXIMUM_TYPE_DEPTH || index >= tables.types.kind.len() {
-        let name = push_string(&mut ast.strings, b"()");
-        return push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[]);
+    let Some(&type_kind) = tables.types.kind.get(index) else {
+        return unit_type(ast);
+    };
+    if depth >= MAXIMUM_TYPE_DEPTH {
+        return unit_type(ast);
     }
-    match tables.types.kind[index] {
+    let element = tables
+        .types
+        .element
+        .get(index)
+        .copied()
+        .unwrap_or(TypeId(NO_INDEX));
+    match type_kind {
         TypeKind::Slice => {
-            let element = lower_type_body(ast, tables, tables.types.element[index], depth + 1);
+            let element = lower_type_body(ast, tables, element, depth + 1);
             push_node(
                 ast,
                 NodeKind::TypeSliceBody,
@@ -40,23 +65,33 @@ fn lower_type_body(ast: &mut Ast, tables: &Tables, kind: TypeId, depth: u32) -> 
                 &[element],
             )
         }
-        TypeKind::Pointer => lower_type_body(ast, tables, tables.types.element[index], depth + 1),
+        TypeKind::Pointer => lower_type_body(ast, tables, element, depth + 1),
         TypeKind::Integer => {
-            let signed = tables.types.flags[index] & TYPE_FLAG_SIGNED != 0;
-            let text = integer_name(tables.types.bit_width[index], signed);
-            let name = push_string(&mut ast.strings, text.as_bytes());
-            push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
+            let signed = tables
+                .types
+                .flags
+                .get(index)
+                .is_some_and(|flags| flags & TYPE_FLAG_SIGNED != 0);
+            let declared = tables.types.bit_width.get(index).copied().unwrap_or(0);
+            match rust_integer_width(declared) {
+                Some(width) => {
+                    let text = integer_name(width, signed);
+                    let name = push_string(&mut ast.strings, text.as_bytes());
+                    push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
+                }
+                None => unit_type(ast),
+            }
         }
         TypeKind::Bool => {
             let name = push_string(&mut ast.strings, b"bool");
             push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
         }
-        TypeKind::Void => {
-            let name = push_string(&mut ast.strings, b"()");
-            push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
-        }
+        TypeKind::Void => unit_type(ast),
         TypeKind::Struct | TypeKind::Opaque => {
-            let text = string_bytes(&tables.strings, tables.types.name[index]).to_vec();
+            let text = name_of(tables, tables.types.name.get(index));
+            if text.is_empty() {
+                return unit_type(ast);
+            }
             let name = push_string(&mut ast.strings, &text);
             push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
         }
@@ -99,29 +134,42 @@ fn reference(ast: &mut Ast, body: NodeId, lifetime: Lifetime) -> NodeId {
 
 fn struct_flags(tables: &Tables, ownership: &Ownership, owner: StructId) -> u32 {
     let mut flags = 0;
-    if tables.structs.flags[owner.0 as usize] & STRUCT_FLAG_EXTERN != 0 {
+    if is_extern(tables, owner) {
         flags |= STRUCT_FLAG_REPR_C;
     }
     for row in struct_fields(&tables.structs, owner) {
-        match ownership.class[row] {
-            OwnershipClass::Borrowed => flags |= STRUCT_FLAG_BORROW_LIFETIME,
-            OwnershipClass::Arena => flags |= STRUCT_FLAG_ARENA_LIFETIME,
+        match ownership.class.get(row) {
+            Some(OwnershipClass::Borrowed) => flags |= STRUCT_FLAG_BORROW_LIFETIME,
+            Some(OwnershipClass::Arena) => flags |= STRUCT_FLAG_ARENA_LIFETIME,
             _ => {}
         }
     }
     flags
 }
 
+fn is_extern(tables: &Tables, owner: StructId) -> bool {
+    tables
+        .structs
+        .flags
+        .get(owner.0 as usize)
+        .is_some_and(|flags| flags & STRUCT_FLAG_EXTERN != 0)
+}
+
+fn name_of(tables: &Tables, name: Option<&StringId>) -> Vec<u8> {
+    name.map(|name| string_bytes(&tables.strings, *name).to_vec())
+        .unwrap_or_default()
+}
+
 fn lower_struct(ast: &mut Ast, tables: &Tables, ownership: &Ownership, owner: StructId) -> NodeId {
     let mut fields = Vec::new();
     for row in struct_fields(&tables.structs, owner) {
-        let field_type = lower_field_type(
-            ast,
-            tables,
-            tables.fields.field_type[row],
-            ownership.class[row],
-        );
-        let text = string_bytes(&tables.strings, tables.fields.name[row]).to_vec();
+        let (Some(&field_type), Some(&class)) =
+            (tables.fields.field_type.get(row), ownership.class.get(row))
+        else {
+            continue;
+        };
+        let field_type = lower_field_type(ast, tables, field_type, class);
+        let text = name_of(tables, tables.fields.name.get(row));
         let name = push_string(&mut ast.strings, &text);
         fields.push(push_node(
             ast,
@@ -133,7 +181,7 @@ fn lower_struct(ast: &mut Ast, tables: &Tables, ownership: &Ownership, owner: St
             &[field_type],
         ));
     }
-    let text = string_bytes(&tables.strings, tables.structs.name[owner.0 as usize]).to_vec();
+    let text = name_of(tables, tables.structs.name.get(owner.0 as usize));
     let name = push_string(&mut ast.strings, &text);
     let flags = struct_flags(tables, ownership, owner);
     push_node(ast, NodeKind::Struct, name, absent(), 0, flags, &fields)
@@ -146,17 +194,23 @@ fn lower_layout_assertions(
     items: &mut Vec<NodeId>,
 ) {
     let index = owner.0 as usize;
-    if tables.structs.flags[index] & STRUCT_FLAG_EXTERN == 0 {
+    if !is_extern(tables, owner) {
         return;
     }
-    let text = string_bytes(&tables.strings, tables.structs.name[index]).to_vec();
+    let (Some(&size), Some(&alignment)) = (
+        tables.structs.size.get(index),
+        tables.structs.alignment.get(index),
+    ) else {
+        return;
+    };
+    let text = name_of(tables, tables.structs.name.get(index));
     let name = push_string(&mut ast.strings, &text);
     items.push(push_node(
         ast,
         NodeKind::AssertSize,
         name,
         absent(),
-        tables.structs.size[index],
+        size,
         0,
         &[],
     ));
@@ -165,19 +219,22 @@ fn lower_layout_assertions(
         NodeKind::AssertAlignment,
         name,
         absent(),
-        tables.structs.alignment[index],
+        alignment,
         0,
         &[],
     ));
     for row in struct_fields(&tables.structs, owner) {
-        let text = string_bytes(&tables.strings, tables.fields.name[row]).to_vec();
+        let Some(&offset) = tables.fields.offset.get(row) else {
+            continue;
+        };
+        let text = name_of(tables, tables.fields.name.get(row));
         let field_name = push_string(&mut ast.strings, &text);
         items.push(push_node(
             ast,
             NodeKind::AssertOffset,
             name,
             field_name,
-            tables.fields.offset[row],
+            offset,
             0,
             &[],
         ));

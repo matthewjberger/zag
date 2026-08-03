@@ -223,16 +223,26 @@ pub fn memory_operation_count(operations: &MemoryOperations) -> usize {
 
 pub fn struct_fields(structs: &Structs, id: StructId) -> std::ops::Range<usize> {
     let index = id.0 as usize;
-    let start = structs.field_start[index] as usize;
-    let count = structs.field_count[index] as usize;
-    start..start + count
+    let (Some(&start), Some(&count)) = (
+        structs.field_start.get(index),
+        structs.field_count.get(index),
+    ) else {
+        return 0..0;
+    };
+    let start = start as usize;
+    start..start.saturating_add(count as usize)
 }
 
 pub fn function_parameters(functions: &Functions, id: FunctionId) -> std::ops::Range<usize> {
     let index = id.0 as usize;
-    let start = functions.parameter_start[index] as usize;
-    let count = functions.parameter_count[index] as usize;
-    start..start + count
+    let (Some(&start), Some(&count)) = (
+        functions.parameter_start.get(index),
+        functions.parameter_count.get(index),
+    ) else {
+        return 0..0;
+    };
+    let start = start as usize;
+    start..start.saturating_add(count as usize)
 }
 
 pub fn is_reference_type(types: &Types, id: TypeId) -> bool {
