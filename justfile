@@ -123,6 +123,14 @@ port name:
 report: fixture
     @cat target/example.report.txt
 
+# Times the passes over a synthetic program of the given size
+#
+# The default in `cargo test` is small enough to stay a normal test. This turns
+# it up, which is the only way to tell a pass that scales from one that has
+# never been asked to.
+bench scale="80000":
+    ZAG_SCALE={{scale}} cargo test -q -p zag --release --test scaling -- --nocapture
+
 # Checks for unused dependencies
 udeps:
     cargo machete

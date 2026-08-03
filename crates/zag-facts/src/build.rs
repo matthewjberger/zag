@@ -130,7 +130,7 @@ pub fn declare_struct(
     alignment: u32,
     flags: u32,
 ) -> StructId {
-    let interned = intern(&mut tables.strings, name);
+    let interned = push_string(&mut tables.strings, name);
     let kind = push_struct_type(tables, interned, size, alignment);
     push_struct(tables, interned, kind, size, alignment, flags)
 }
@@ -151,12 +151,12 @@ pub fn declare_field(
     field_type: TypeId,
     offset: u32,
 ) -> FieldId {
-    let interned = intern(&mut tables.strings, name);
+    let interned = push_string(&mut tables.strings, name);
     push_field(tables, owner, interned, field_type, offset)
 }
 
 pub fn declare_function(tables: &mut Tables, name: &[u8], owner: StructId) -> FunctionId {
-    let interned = intern(&mut tables.strings, name);
+    let interned = push_string(&mut tables.strings, name);
     push_function(tables, interned, owner)
 }
 
@@ -167,7 +167,7 @@ pub fn declare_parameter(
     parameter_type: TypeId,
     flags: u32,
 ) {
-    let interned = intern(&mut tables.strings, name);
+    let interned = push_string(&mut tables.strings, name);
     push_parameter(tables, owner, interned, parameter_type, flags);
 }
 

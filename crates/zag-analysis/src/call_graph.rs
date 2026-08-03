@@ -49,23 +49,33 @@ pub fn callees(graph: &CallGraph, caller: FunctionId) -> std::ops::Range<usize> 
     graph.edge_start[index] as usize..graph.edge_start[index + 1] as usize
 }
 
-pub fn reachable_from(graph: &CallGraph, root: FunctionId) -> Vec<bool> {
+/// Stamps everything reachable from `root` with `generation`, leaving whatever
+/// earlier generations wrote in place. Callers that walk many roots reuse one
+/// buffer this way, where a fresh visited vector per root would cost roots
+/// times functions no matter how small each closure turns out to be.
+pub fn mark_reachable(graph: &CallGraph, root: FunctionId, stamp: &mut [u32], generation: u32) {
     let functions = graph.edge_start.len().saturating_sub(1);
-    let mut visited = vec![false; functions];
-    if root.0 as usize >= functions {
-        return visited;
+    let index = root.0 as usize;
+    if index >= functions || index >= stamp.len() {
+        return;
     }
+    stamp[index] = generation;
     let mut pending = vec![root];
-    visited[root.0 as usize] = true;
     while let Some(current) = pending.pop() {
         for edge in callees(graph, current) {
             let target = graph.edge_target[edge];
-            let index = target.0 as usize;
-            if index < functions && !visited[index] {
-                visited[index] = true;
+            let slot = target.0 as usize;
+            if slot < functions && slot < stamp.len() && stamp[slot] != generation {
+                stamp[slot] = generation;
                 pending.push(target);
             }
         }
     }
-    visited
+}
+
+pub fn reachable_from(graph: &CallGraph, root: FunctionId) -> Vec<bool> {
+    let functions = graph.edge_start.len().saturating_sub(1);
+    let mut stamp = vec![0u32; functions];
+    mark_reachable(graph, root, &mut stamp, 1);
+    stamp.into_iter().map(|value| value == 1).collect()
 }

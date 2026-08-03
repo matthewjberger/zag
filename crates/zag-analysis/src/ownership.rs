@@ -1,8 +1,8 @@
-use crate::call_graph::{CallGraph, reachable_from};
+use crate::call_graph::{CallGraph, mark_reachable};
 use crate::provenance::{AllocatorClass, Provenance, classify_source, join};
 use zag_facts::tables::{
-    AssignmentSource, MemoryOperationKind, PlaceKind, Tables, field_count, is_reference_type,
-    memory_operation_count, struct_count,
+    AssignmentSource, MemoryOperationKind, PlaceKind, Tables, field_count, function_count,
+    is_reference_type, memory_operation_count,
 };
 use zag_facts::{FieldId, FunctionId, NO_INDEX};
 
@@ -126,32 +126,42 @@ struct AssignmentFacts {
     allocator: AllocatorClass,
 }
 
-/// Deinit closures are computed on demand. Most structs never have a field
-/// freed anywhere, so building one for every struct with a deinit allocates a
-/// reachability vector per struct that nothing reads.
-fn closure_for(
+/// One reusable buffer rather than a reachability vector per struct. Fields
+/// arrive grouped by owner, so this recomputes once per struct that actually
+/// has a field freed somewhere, and a struct whose fields are never freed
+/// costs nothing at all.
+struct DeinitClosure {
+    owner: Option<usize>,
+    stamp: Vec<u32>,
+    generation: u32,
+}
+
+fn closure_holds(
     tables: &Tables,
     graph: &CallGraph,
-    closures: &mut [Option<Vec<bool>>],
+    closure: &mut DeinitClosure,
     owner: usize,
-) -> Option<usize> {
-    if owner >= closures.len() {
-        return None;
+    function: FunctionId,
+) -> bool {
+    if closure.owner != Some(owner) {
+        closure.owner = Some(owner);
+        closure.generation += 1;
+        if let Some(deinit) = tables.structs.deinit.get(owner).copied()
+            && deinit.0 != NO_INDEX
+        {
+            mark_reachable(graph, deinit, &mut closure.stamp, closure.generation);
+        }
     }
-    if closures[owner].is_none() {
-        let deinit = tables.structs.deinit.get(owner).copied();
-        closures[owner] = match deinit {
-            Some(deinit) if deinit.0 != NO_INDEX => Some(reachable_from(graph, deinit)),
-            _ => Some(Vec::new()),
-        };
-    }
-    Some(owner)
+    closure
+        .stamp
+        .get(function.0 as usize)
+        .is_some_and(|stamped| *stamped == closure.generation)
 }
 
 fn gather_free_facts(
     tables: &Tables,
     graph: &CallGraph,
-    closures: &mut [Option<Vec<bool>>],
+    closure: &mut DeinitClosure,
     index: &FieldIndex,
     field: FieldId,
     ownership: &mut Ownership,
@@ -163,7 +173,6 @@ fn gather_free_facts(
         return facts;
     }
     let owner = tables.fields.owner[slot].0 as usize;
-    let resolved = closure_for(tables, graph, closures, owner);
     for slot in range {
         let row = index.free_rows[slot] as usize;
         let function = tables
@@ -172,10 +181,7 @@ fn gather_free_facts(
             .get(row)
             .copied()
             .unwrap_or(FunctionId(NO_INDEX));
-        let inside = resolved
-            .and_then(|owner| closures[owner].as_ref())
-            .and_then(|reachable| reachable.get(function.0 as usize).copied())
-            .unwrap_or(false);
+        let inside = closure_holds(tables, graph, closure, owner, function);
         facts.freed = true;
         facts.freed_in_deinit_closure |= inside;
         ownership.evidence_kind.push(if inside {
@@ -313,7 +319,11 @@ pub fn classify_ownership(
     provenance: &Provenance,
 ) -> Ownership {
     let index = build_field_index(tables);
-    let mut closures: Vec<Option<Vec<bool>>> = vec![None; struct_count(&tables.structs)];
+    let mut closure = DeinitClosure {
+        owner: None,
+        stamp: vec![0u32; function_count(&tables.functions)],
+        generation: 0,
+    };
     let mut ownership = Ownership::default();
     for row in 0..field_count(&tables.fields) {
         let field = FieldId(row as u32);
@@ -321,7 +331,7 @@ pub fn classify_ownership(
         let (class, confidence) = match tables.fields.field_type.get(row).copied() {
             Some(kind) if is_reference_type(&tables.types, kind) => {
                 let free =
-                    gather_free_facts(tables, graph, &mut closures, &index, field, &mut ownership);
+                    gather_free_facts(tables, graph, &mut closure, &index, field, &mut ownership);
                 let assignment =
                     gather_assignment_facts(tables, provenance, &index, field, &mut ownership);
                 decide(free, assignment)
