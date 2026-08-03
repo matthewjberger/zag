@@ -220,7 +220,14 @@ pub fn main() !void {
             }
             break :blk text;
         } else "-";
-        std.debug.print("function {s} owner={s} returns={s}\n", .{ function.name, owner, returns });
+        // The line goes ahead of `returns`, because the reader takes the whole
+        // rest of the line for a return type that may contain spaces.
+        std.debug.print("function {s} owner={s} line={d} returns={s}\n", .{
+            function.name,
+            owner,
+            tree.tokenLocation(0, function.first).line + 1,
+            returns,
+        });
         var iterator = proto.iterate(&tree);
         var index: usize = 0;
         while (iterator.next()) |parameter| : (index += 1) {
@@ -320,11 +327,12 @@ pub fn main() !void {
         for (initializer.ast.fields) |field| {
             const value_first = tree.firstToken(field);
             if (value_first < 2) continue;
-            std.debug.print("initialiser {s} node={d} parent={s} field={s} value={s}\n", .{
+            std.debug.print("initialiser {s} node={d} parent={s} field={s} line={d} value={s}\n", .{
                 functions.items[owner].name,
                 raw,
                 parent_text,
                 tree.tokenSlice(value_first - 2),
+                tree.tokenLocation(0, value_first).line + 1,
                 try collapse(arena, tree.getNodeSource(field)),
             });
         }

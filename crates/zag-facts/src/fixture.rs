@@ -1,8 +1,8 @@
 use crate::build::{
-    intern, push_allocator_source, push_call, push_call_argument, push_field,
+    intern, name_root_module, push_allocator_source, push_call, push_call_argument, push_field,
     push_field_assignment, push_function, push_integer_type, push_memory_operation,
     push_opaque_type, push_parameter, push_pointer_type, push_slice_type, push_struct,
-    push_struct_type, push_void_type, set_function_signature, set_struct_deinit,
+    push_struct_type, push_void_type, set_function_line, set_function_signature, set_struct_deinit,
 };
 use crate::handles::{FieldId, FunctionId, MemoryOperationId, NO_INDEX, StructId, TypeId};
 use crate::tables::{
@@ -177,6 +177,18 @@ fn push_fixture_functions(
     let make_view = push_function(tables, name, StructId(NO_INDEX));
     push_plain_parameter(tables, make_view, b"bytes", types.slice_of_bytes);
 
+    for (function, line) in [
+        (initialize, 16),
+        (deinitialize, 23),
+        (release, 28),
+        (make_buffer, 33),
+        (parse_node, 48),
+        (parse_tree, 57),
+        (make_view, 66),
+    ] {
+        set_function_line(tables, function, line);
+    }
+
     let void = push_void_type(tables);
     let no_set = StructId(NO_INDEX);
     set_function_signature(tables, initialize, types.buffer, no_set, true);
@@ -294,6 +306,7 @@ fn push_fixture_flow(tables: &mut Tables, structs: &FixtureStructs, functions: &
 pub fn example_tables() -> Tables {
     let mut tables = empty_tables();
     tables.target = intern(&mut tables.strings, b"x86_64-linux");
+    name_root_module(&mut tables, b"", b"example.zig");
     let types = push_fixture_types(&mut tables);
     let structs = push_fixture_structs(&mut tables, &types);
     let functions = push_fixture_functions(&mut tables, &types, &structs);

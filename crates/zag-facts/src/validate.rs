@@ -251,6 +251,7 @@ fn check_function_column_lengths(tables: &Tables, violations: &mut Vec<Violation
         count,
         functions.flags.len(),
     );
+    expect_length(violations, "functions", "line", count, functions.line.len());
 
     let parameters = &tables.parameters;
     let count = parameter_count(parameters);
@@ -382,8 +383,22 @@ fn check_side_table_column_lengths(tables: &Tables, violations: &mut Vec<Violati
         count,
         assignments.expression.len(),
     );
+    expect_length(
+        violations,
+        "field_assignments",
+        "line",
+        count,
+        assignments.line.len(),
+    );
     let expressions = &tables.expressions;
     let count = expressions.kind.len();
+    expect_length(
+        violations,
+        "expressions",
+        "line",
+        count,
+        expressions.line.len(),
+    );
     expect_length(
         violations,
         "expressions",

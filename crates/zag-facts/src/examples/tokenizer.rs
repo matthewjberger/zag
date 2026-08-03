@@ -1,7 +1,7 @@
 use crate::build::{
-    declare_field, declare_function, declare_parameter, declare_struct, intern,
+    declare_field, declare_function, declare_parameter, declare_struct, intern, name_root_module,
     push_allocator_source, push_call, push_call_argument, push_field_assignment, push_integer_type,
-    push_memory_operation, push_opaque_type, push_slice_type, push_void_type,
+    push_memory_operation, push_opaque_type, push_slice_type, push_void_type, set_function_line,
     set_function_signature, struct_type,
 };
 use crate::handles::{FunctionId, MemoryOperationId, NO_INDEX, StructId};
@@ -13,6 +13,7 @@ use crate::tables::{
 pub fn tables() -> Tables {
     let mut tables = empty_tables();
     tables.target = intern(&mut tables.strings, b"x86_64-linux");
+    name_root_module(&mut tables, b"", b"main.zig");
 
     let byte = push_integer_type(&mut tables, 8, false);
     let word = push_integer_type(&mut tables, 32, false);
@@ -47,6 +48,8 @@ pub fn tables() -> Tables {
     let void = push_void_type(&mut tables);
     set_function_signature(&mut tables, parse, document_type, StructId(NO_INDEX), true);
     set_function_signature(&mut tables, main, void, StructId(NO_INDEX), true);
+    set_function_line(&mut tables, parse, 17);
+    set_function_line(&mut tables, main, 40);
 
     let arena = push_allocator_source(
         &mut tables,

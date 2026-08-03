@@ -240,6 +240,7 @@ fn encode_functions(out: &mut Vec<u8>, tables: &Tables) {
     write_u32_column(out, &raw_from(&functions.returns, |value| value.0));
     write_u32_column(out, &raw_from(&functions.error_set, |value| value.0));
     write_u32_column(out, &functions.flags);
+    write_u32_column(out, &functions.line);
 
     let parameters = &tables.parameters;
     write_u32_column(out, &raw_from(&parameters.owner, |value| value.0));
@@ -276,6 +277,7 @@ fn encode_side_tables(out: &mut Vec<u8>, tables: &Tables) {
     write_u32_column(out, &expressions.parameter);
     write_u32_column(out, &raw_from(&expressions.result, |value| value.0));
     write_u32_column(out, &raw_from(&expressions.field, |value| value.0));
+    write_u32_column(out, &expressions.line);
     write_u32_column(out, &expressions.child_start);
     write_u32_column(out, &expressions.child_count);
     write_u32_column(out, &raw_from(&expressions.children, |value| value.0));
@@ -289,6 +291,7 @@ fn encode_side_tables(out: &mut Vec<u8>, tables: &Tables) {
         &raw_from(&assignments.memory_operation, |value| value.0),
     );
     write_u32_column(out, &raw_from(&assignments.expression, |value| value.0));
+    write_u32_column(out, &assignments.line);
 }
 
 fn raw_from<T>(values: &[T], project: impl Fn(&T) -> u32) -> Vec<u32> {
@@ -441,6 +444,7 @@ fn decode_functions(
         .map(StructId)
         .collect();
     functions.flags = read_u32_column(bytes, cursor)?;
+    functions.line = read_u32_column(bytes, cursor)?;
 
     let parameters = &mut tables.parameters;
     parameters.owner = read_u32_column(bytes, cursor)?
@@ -533,6 +537,7 @@ fn decode_memory(bytes: &[u8], cursor: &mut usize, tables: &mut Tables) -> Resul
         .into_iter()
         .map(FieldId)
         .collect();
+    expressions.line = read_u32_column(bytes, cursor)?;
     expressions.child_start = read_u32_column(bytes, cursor)?;
     expressions.child_count = read_u32_column(bytes, cursor)?;
     expressions.children = read_u32_column(bytes, cursor)?
@@ -558,6 +563,7 @@ fn decode_memory(bytes: &[u8], cursor: &mut usize, tables: &mut Tables) -> Resul
         .into_iter()
         .map(crate::handles::ExpressionId)
         .collect();
+    assignments.line = read_u32_column(bytes, cursor)?;
     Ok(())
 }
 

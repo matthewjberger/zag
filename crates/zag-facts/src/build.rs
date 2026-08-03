@@ -335,7 +335,28 @@ pub fn push_function(tables: &mut Tables, name: StringId, owner: StructId) -> Fu
     functions.returns.push(TypeId(crate::handles::NO_INDEX));
     functions.error_set.push(StructId(crate::handles::NO_INDEX));
     functions.flags.push(0);
+    functions.line.push(0);
     FunctionId(functions.name.len() as u32 - 1)
+}
+
+/// Where the Zig declares it. Set separately from the rest of the signature
+/// because only a frontend reading source has a line to give.
+pub fn set_function_line(tables: &mut Tables, function: FunctionId, line: u32) {
+    if let Some(slot) = tables.functions.line.get_mut(function.0 as usize) {
+        *slot = line;
+    }
+}
+
+pub fn set_expression_line(tables: &mut Tables, expression: ExpressionId, line: u32) {
+    if let Some(slot) = tables.expressions.line.get_mut(expression.0 as usize) {
+        *slot = line;
+    }
+}
+
+pub fn set_field_assignment_line(tables: &mut Tables, row: usize, line: u32) {
+    if let Some(slot) = tables.field_assignments.line.get_mut(row) {
+        *slot = line;
+    }
 }
 
 /// What the function gives back. A return type left unset means the frontend
@@ -443,6 +464,27 @@ pub fn push_field_assignment(
     );
 }
 
+/// Where the Zig writes the field, on the row the caller just added.
+pub fn push_field_assignment_at(
+    tables: &mut Tables,
+    field: FieldId,
+    function: FunctionId,
+    source: AssignmentSource,
+    memory_operation: MemoryOperationId,
+    expression: ExpressionId,
+    line: u32,
+) {
+    let row = push_field_assignment_with(
+        tables,
+        field,
+        function,
+        source,
+        memory_operation,
+        expression,
+    );
+    set_field_assignment_line(tables, row, line);
+}
+
 pub fn push_field_assignment_with(
     tables: &mut Tables,
     field: FieldId,
@@ -450,13 +492,15 @@ pub fn push_field_assignment_with(
     source: AssignmentSource,
     memory_operation: MemoryOperationId,
     expression: ExpressionId,
-) {
+) -> usize {
     let assignments = &mut tables.field_assignments;
     assignments.field.push(field);
     assignments.function.push(function);
     assignments.source.push(source);
     assignments.memory_operation.push(memory_operation);
     assignments.expression.push(expression);
+    assignments.line.push(0);
+    assignments.field.len() - 1
 }
 
 pub fn push_expression(
@@ -478,5 +522,6 @@ pub fn push_expression(
     expressions.field.push(field);
     expressions.child_start.push(child_start);
     expressions.child_count.push(children.len() as u32);
+    expressions.line.push(0);
     ExpressionId(expressions.kind.len() as u32 - 1)
 }

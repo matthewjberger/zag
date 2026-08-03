@@ -229,6 +229,20 @@ fn refusal_text(refusal: crate::function::Refusal) -> &'static [u8] {
     }
 }
 
+/// ` (main.zig:18)`, or nothing when the tables recorded no location. A line
+/// with no file to go with it would send a reader nowhere, so both or neither.
+fn located(tables: &Tables, function: FunctionId, line: u32) -> Vec<u8> {
+    let Some((path, line)) = zag_facts::tables::function_location(tables, function, line) else {
+        return Vec::new();
+    };
+    let mut out = b" (".to_vec();
+    out.extend_from_slice(path);
+    out.push(b':');
+    out.extend_from_slice(line.to_string().as_bytes());
+    out.push(b')');
+    out
+}
+
 fn field_name(tables: &Tables, field: FieldId) -> &[u8] {
     tables
         .fields
@@ -271,6 +285,11 @@ fn write_constructor_refusal(
             ],
         ),
         Refusal::NotSpellable(field) => {
+            let at = located(
+                tables,
+                function,
+                crate::constructor::unspellable_line(tables, ownership, lowering, owner),
+            );
             match crate::constructor::unspellable_text(tables, ownership, lowering, owner) {
                 Some(text) => write_line(
                     out,
@@ -280,6 +299,7 @@ fn write_constructor_refusal(
                         b" is set from ",
                         &text,
                         b", which the port cannot spell",
+                        &at,
                     ],
                 ),
                 None => write_line(
@@ -403,10 +423,15 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
             .unwrap_or(zag_facts::tables::ROOT_MODULE);
         let lowering = crate::lower::lowering(&lifetimes, &lookups, module, qualified);
         let outcome = outcome_text(disposition(tables, ownership, lowering, handle));
+        let at = located(
+            tables,
+            handle,
+            tables.functions.line.get(index).copied().unwrap_or(0),
+        );
         if owner.is_empty() {
-            write_line(out, &[b"  ", name, b": ", outcome]);
+            write_line(out, &[b"  ", name, b": ", outcome, &at]);
         } else {
-            write_line(out, &[b"  ", owner, b".", name, b": ", outcome]);
+            write_line(out, &[b"  ", owner, b".", name, b": ", outcome, &at]);
         }
         if name == b"init" {
             write_constructor_refusal(out, tables, ownership, lowering, handle);

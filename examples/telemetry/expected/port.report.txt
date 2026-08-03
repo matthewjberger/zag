@@ -19,6 +19,6 @@ Frame.source
   evidence: allocator resolves to the global allocator
 
 functions: 3
-  Frame.init: ported, as the constructor
-  Frame.deinit: disappears, Drop frees what it freed
-  main: still to write, the error set it can fail with has no name
+  Frame.init: ported, as the constructor (main.zig:10)
+  Frame.deinit: disappears, Drop frees what it freed (main.zig:18)
+  main: still to write, the error set it can fail with has no name (main.zig:23)

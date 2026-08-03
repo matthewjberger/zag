@@ -72,6 +72,60 @@ fn the_frontend_ports_every_example_the_way_the_hand_built_tables_do() {
     }
 }
 
+/// The report is the deliverable for everything the port cannot write, so the
+/// hand-built tables have to produce the same one. This is stricter than the
+/// source comparison above: it covers the source locations, the reasons, and
+/// the allocator conflicts, none of which reach the emitted Rust.
+#[test]
+fn the_frontend_reports_what_the_hand_built_tables_report() {
+    for name in runnable_names() {
+        let Some(tables) = read(name) else { continue };
+        let from_source = zag::generate(&tables)
+            .unwrap_or_else(|cause| panic!("{name}: {}", zag::describe(&cause)));
+        let by_hand = zag::generate(&tables_for(name).expect("registered"))
+            .unwrap_or_else(|cause| panic!("{name}: {}", zag::describe(&cause)));
+        assert_eq!(
+            String::from_utf8_lossy(&from_source.report),
+            String::from_utf8_lossy(&by_hand.report),
+            "{name}: reading the program gives a different report than the tables written for it"
+        );
+    }
+}
+
+/// A location is only useful if it points at the right line, so this reads the
+/// Zig back and checks the line the report names really is the declaration.
+#[test]
+fn the_line_a_report_names_is_the_line_the_function_is_declared_on() {
+    for name in runnable_names() {
+        let Some(tables) = read(name) else { continue };
+        let root = workspace_root().join("examples").join(name).join("src");
+        for index in 0..zag_facts::tables::function_count(&tables.functions) {
+            let line = tables.functions.line[index];
+            assert_ne!(line, 0, "{name}: a function came back with no line");
+            let module = tables.functions.module[index].0 as usize;
+            let path =
+                zag_facts::tables::string_bytes(&tables.strings, tables.modules.path[module]);
+            let source = read_source(&root.join(String::from_utf8_lossy(path).as_ref()));
+            let declared = source
+                .lines()
+                .nth(line as usize - 1)
+                .unwrap_or_default()
+                .trim();
+            let function =
+                zag_facts::tables::string_bytes(&tables.strings, tables.functions.name[index]);
+            let function = String::from_utf8_lossy(function);
+            assert!(
+                declared.contains(&format!("fn {function}")),
+                "{name}: {function} is reported at line {line}, which reads {declared:?}"
+            );
+        }
+    }
+}
+
+fn read_source(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|cause| panic!("{}: {cause}", path.display()))
+}
+
 #[test]
 fn the_frontend_reaches_the_same_ownership_decisions() {
     for name in runnable_names() {

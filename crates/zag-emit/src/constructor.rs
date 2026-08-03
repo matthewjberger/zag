@@ -300,8 +300,44 @@ pub fn unspellable_text(
     (!bytes.is_empty()).then(|| bytes.to_vec())
 }
 
+/// Where the Zig the port could not read was written, or zero.
+pub fn unspellable_line(
+    tables: &Tables,
+    ownership: &Ownership,
+    lowering: Lowering,
+    owner: StructId,
+) -> u32 {
+    let Err(Refusal::NotSpellable(field)) = constructor_for(tables, ownership, lowering, owner)
+    else {
+        return 0;
+    };
+    let Some(function) = crate::index::init_of(lowering.index, owner) else {
+        return 0;
+    };
+    let Some(expression) = assignment_for(tables, lowering.index, function, field) else {
+        return 0;
+    };
+    unspellable_row(tables, expression)
+        .and_then(|row| tables.expressions.line.get(row).copied())
+        .unwrap_or(0)
+}
+
 /// The innermost expression the port could not spell, which is the one whose
 /// Zig is worth quoting rather than the wrapper around it.
+fn unspellable_row(tables: &Tables, expression: ExpressionId) -> Option<usize> {
+    let kind = tables
+        .expressions
+        .kind
+        .get(expression.0 as usize)
+        .copied()?;
+    if kind == ExpressionKind::Unsupported {
+        return Some(expression.0 as usize);
+    }
+    expression_children(tables, expression)
+        .filter_map(|slot| tables.expressions.children.get(slot).copied())
+        .find_map(|child| unspellable_row(tables, child))
+}
+
 fn first_unspellable(tables: &Tables, expression: ExpressionId) -> Option<StringId> {
     let kind = tables
         .expressions

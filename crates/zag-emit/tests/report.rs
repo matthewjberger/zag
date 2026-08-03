@@ -286,6 +286,71 @@ fn a_return_type_that_never_resolved_is_its_own_outcome() {
     );
 }
 
+/// A location needs both a file and a line to send a reader anywhere, so the
+/// report prints one only when the tables recorded both.
+#[test]
+fn a_located_function_says_where_it_was_written() {
+    let mut tables = holder(|_, _, _, _| {});
+    zag_facts::build::name_root_module(&mut tables, b"", b"holder.zig");
+    let function = zag_facts::FunctionId(0);
+    zag_facts::build::set_function_line(&mut tables, function, 12);
+    assert!(
+        reported(&tables).contains("(holder.zig:12)"),
+        "{}",
+        reported(&tables)
+    );
+}
+
+#[test]
+fn a_function_with_no_line_says_nothing_about_where() {
+    let mut tables = holder(|_, _, _, _| {});
+    zag_facts::build::name_root_module(&mut tables, b"", b"holder.zig");
+    assert!(
+        !reported(&tables).contains("holder.zig:"),
+        "{}",
+        reported(&tables)
+    );
+}
+
+#[test]
+fn a_line_with_no_file_to_go_with_it_says_nothing() {
+    let mut tables = holder(|_, _, _, _| {});
+    zag_facts::build::set_function_line(&mut tables, zag_facts::FunctionId(0), 12);
+    let report = reported(&tables);
+    assert!(!report.contains(":12)"), "{report}");
+}
+
+#[test]
+fn an_unspellable_expression_is_reported_where_it_was_written() {
+    let mut tables = holder(|tables, _, field, initialize| {
+        let text = zag_facts::build::push_string(&mut tables.strings, b"countWords(input)");
+        let value = push_expression(
+            tables,
+            ExpressionKind::Unsupported,
+            text,
+            NO_INDEX,
+            zag_facts::TypeId(NO_INDEX),
+            FieldId(NO_INDEX),
+            &[],
+        );
+        zag_facts::build::set_expression_line(tables, value, 31);
+        push_field_assignment_with(
+            tables,
+            field,
+            initialize,
+            AssignmentSource::Parameter,
+            MemoryOperationId(NO_INDEX),
+            value,
+        );
+    });
+    zag_facts::build::name_root_module(&mut tables, b"", b"holder.zig");
+    let report = reported(&tables);
+    assert!(
+        report.contains("countWords(input), which the port cannot spell (holder.zig:31)"),
+        "{report}"
+    );
+}
+
 #[test]
 fn every_outcome_has_wording_of_its_own() {
     let mut seen: Vec<&[u8]> = Vec::new();

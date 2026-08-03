@@ -1,11 +1,11 @@
 use crate::build::{
-    declare_field, declare_function, declare_parameter, declare_struct, intern,
+    declare_field, declare_function, declare_parameter, declare_struct, intern, name_root_module,
     push_allocator_source, push_call, push_call_argument, push_expression,
-    push_field_assignment_with, push_integer_type, push_memory_operation, push_opaque_type,
-    push_pointer_type, push_slice_type, push_void_type, set_function_signature, set_struct_deinit,
-    struct_type,
+    push_field_assignment_at, push_integer_type, push_memory_operation, push_opaque_type,
+    push_pointer_type, push_slice_type, push_string, push_void_type, set_expression_line,
+    set_function_line, set_function_signature, set_struct_deinit, struct_type,
 };
-use crate::handles::{FieldId, FunctionId, NO_INDEX, StringId, StructId};
+use crate::handles::{FieldId, FunctionId, MemoryOperationId, NO_INDEX, StringId, StructId};
 use crate::tables::{
     AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind,
     PARAMETER_FLAG_ALLOCATOR, PARAMETER_FLAG_MUTABLE, PlaceKind, Tables, empty_tables,
@@ -14,6 +14,7 @@ use crate::tables::{
 pub fn tables() -> Tables {
     let mut tables = empty_tables();
     tables.target = intern(&mut tables.strings, b"x86_64-linux");
+    name_root_module(&mut tables, b"", b"main.zig");
 
     let byte = push_integer_type(&mut tables, 8, false);
     let word = push_integer_type(&mut tables, 32, false);
@@ -23,8 +24,8 @@ pub fn tables() -> Tables {
 
     let counts = declare_struct(&mut tables, b"Counts", 24, 8, 0);
     let counts_text = declare_field(&mut tables, counts, b"text", text, 0);
-    declare_field(&mut tables, counts, b"words", word, 16);
-    declare_field(&mut tables, counts, b"lines", word, 20);
+    let counts_words = declare_field(&mut tables, counts, b"words", word, 16);
+    let counts_lines = declare_field(&mut tables, counts, b"lines", word, 20);
     let counts_type = struct_type(&tables, counts);
     let counts_pointer = push_pointer_type(&mut tables, counts_type);
 
@@ -84,6 +85,14 @@ pub fn tables() -> Tables {
     set_function_signature(&mut tables, deinitialize, void, StructId(NO_INDEX), false);
     set_function_signature(&mut tables, release, void, StructId(NO_INDEX), false);
     set_function_signature(&mut tables, main, void, StructId(NO_INDEX), true);
+    for (function, line) in [
+        (initialize, 9),
+        (deinitialize, 31),
+        (release, 36),
+        (main, 40),
+    ] {
+        set_function_line(&mut tables, function, line);
+    }
 
     let page = push_allocator_source(
         &mut tables,
@@ -121,9 +130,9 @@ pub fn tables() -> Tables {
         PlaceKind::FieldOfParameter,
         counts_text,
     );
-    // `words` and `lines` are counted in a loop, so nothing the frontend can
-    // read assigns them and they carry no expression at all. `text` is the
-    // copy the allocation makes.
+    // `text` is the copy the allocation makes. `words` and `lines` are set
+    // from locals a loop filled, which the port cannot read, so each carries
+    // the Zig it could not spell rather than nothing at all.
     let copied = push_expression(
         &mut tables,
         ExpressionKind::Allocation,
@@ -133,14 +142,41 @@ pub fn tables() -> Tables {
         FieldId(NO_INDEX),
         &[],
     );
-    push_field_assignment_with(
+    set_expression_line(&mut tables, copied, 23);
+    push_field_assignment_at(
         &mut tables,
         counts_text,
         initialize,
         AssignmentSource::Allocation,
         allocate,
         copied,
+        23,
     );
+    for (field, name, line) in [
+        (counts_words, b"words".as_slice(), 24),
+        (counts_lines, b"lines".as_slice(), 25),
+    ] {
+        let spelled = push_string(&mut tables.strings, name);
+        let unreadable = push_expression(
+            &mut tables,
+            ExpressionKind::Unsupported,
+            spelled,
+            NO_INDEX,
+            word,
+            FieldId(NO_INDEX),
+            &[],
+        );
+        set_expression_line(&mut tables, unreadable, line);
+        push_field_assignment_at(
+            &mut tables,
+            field,
+            initialize,
+            AssignmentSource::Unknown,
+            MemoryOperationId(NO_INDEX),
+            unreadable,
+            line,
+        );
+    }
 
     tables
 }

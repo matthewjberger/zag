@@ -20,6 +20,9 @@ pub struct Function {
     pub name: String,
     pub owner: String,
     pub returns: String,
+    /// One-based line in the file that declares it. Zero where the reader had
+    /// none to give, which is what a hand-built table leaves behind.
+    pub line: u32,
     pub parameters: Vec<Parameter>,
     pub calls: Vec<Call>,
     pub locals: Vec<(String, String)>,
@@ -43,6 +46,7 @@ pub struct Initialiser {
     pub node: u32,
     pub parent: Option<u32>,
     pub field: String,
+    pub line: u32,
     pub value: String,
 }
 
@@ -120,6 +124,7 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                 name: subject.to_string(),
                 owner: value(line, "owner").unwrap_or("-").to_string(),
                 returns: value(line, "returns").unwrap_or("-").to_string(),
+                line: number(line, "line"),
                 ..Function::default()
             }),
             "parameter" => {
@@ -172,6 +177,7 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                         node,
                         parent,
                         field,
+                        line: number(line, "line"),
                         value: entry,
                     });
                 }

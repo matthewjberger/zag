@@ -152,6 +152,9 @@ pub struct Functions {
     /// from the body and names nothing, which leaves this absent.
     pub error_set: Vec<StructId>,
     pub flags: Vec<u32>,
+    /// One-based line in the module that declares it, so the report can say
+    /// where rather than only what. Zero where nothing recorded one.
+    pub line: Vec<u32>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
@@ -217,6 +220,9 @@ pub struct Expressions {
     pub child_count: Vec<u32>,
     pub children: Vec<ExpressionId>,
     pub field: Vec<FieldId>,
+    /// One-based line of the Zig this came from. Zero for an expression the
+    /// port synthesised rather than read.
+    pub line: Vec<u32>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
@@ -226,6 +232,8 @@ pub struct FieldAssignments {
     pub source: Vec<AssignmentSource>,
     pub memory_operation: Vec<MemoryOperationId>,
     pub expression: Vec<ExpressionId>,
+    /// One-based line of the Zig that writes the field.
+    pub line: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -303,6 +311,32 @@ pub fn module_count(modules: &Modules) -> usize {
 /// has one namespace, so its port needs no module tree to keep names apart.
 pub fn has_submodules(modules: &Modules) -> bool {
     module_count(modules) > 1
+}
+
+/// Where a declaration sits in the Zig, as a module path and a line, when both
+/// are known. A hand-built table records neither, so a caller gets nothing
+/// rather than a line with no file to go with it.
+pub fn source_location(tables: &Tables, module: ModuleId, line: u32) -> Option<(&[u8], u32)> {
+    if line == 0 {
+        return None;
+    }
+    let path = tables.modules.path.get(module.0 as usize).copied()?;
+    if path.0 == crate::handles::NO_INDEX {
+        return None;
+    }
+    let path = string_bytes(&tables.strings, path);
+    (!path.is_empty()).then_some((path, line))
+}
+
+/// Where the function was written, which is also where anything inside it was.
+pub fn function_location(tables: &Tables, function: FunctionId, line: u32) -> Option<(&[u8], u32)> {
+    let module = tables
+        .functions
+        .module
+        .get(function.0 as usize)
+        .copied()
+        .unwrap_or(ROOT_MODULE);
+    source_location(tables, module, line)
 }
 
 pub fn expression_children(expressions: &Expressions, row: usize) -> std::ops::Range<usize> {

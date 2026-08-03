@@ -19,7 +19,7 @@ Entry.amount
   confidence: high
 
 functions: 4
-  main: still to write, the error set it can fail with has no name
-  close: disappears, Drop frees what it freed
-  open: still to write, the error set it can fail with has no name
-  total: ported, signature only, the body is still to write
+  main: still to write, the error set it can fail with has no name (main.zig:5)
+  close: disappears, Drop frees what it freed (close.zig:4)
+  open: still to write, the error set it can fail with has no name (store.zig:4)
+  total: ported, signature only, the body is still to write (store.zig:13)

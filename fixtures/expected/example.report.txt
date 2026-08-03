@@ -47,11 +47,11 @@ Cache.entries
   evidence: no assignment to this field was found
 
 functions: 7
-  Buffer.init: still to write, the error set it can fail with has no name
+  Buffer.init: still to write, the error set it can fail with has no name (example.zig:16)
     no constructor: nothing the port could read assigns data
-  Buffer.deinit: disappears, Drop frees what it freed
-  release: disappears, Drop frees what it freed
-  makeBuffer: still to write, the error set it can fail with has no name
-  parseNode: still to write, the error set it can fail with has no name
-  parseTree: still to write, the error set it can fail with has no name
-  makeView: ported, signature only, the body is still to write
+  Buffer.deinit: disappears, Drop frees what it freed (example.zig:23)
+  release: disappears, Drop frees what it freed (example.zig:28)
+  makeBuffer: still to write, the error set it can fail with has no name (example.zig:33)
+  parseNode: still to write, the error set it can fail with has no name (example.zig:48)
+  parseTree: still to write, the error set it can fail with has no name (example.zig:57)
+  makeView: ported, signature only, the body is still to write (example.zig:66)

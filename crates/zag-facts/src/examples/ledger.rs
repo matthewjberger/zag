@@ -1,9 +1,9 @@
 use crate::build::{
     declare_field, declare_function, declare_module, declare_parameter, declare_struct, intern,
     name_root_module, push_allocator_source, push_call, push_call_argument, push_expression,
-    push_field_assignment_with, push_integer_type, push_memory_operation, push_opaque_type,
-    push_pointer_type, push_slice_type, push_void_type, set_function_module,
-    set_function_signature, set_struct_module, struct_type,
+    push_field_assignment_at, push_integer_type, push_memory_operation, push_opaque_type,
+    push_pointer_type, push_slice_type, push_void_type, set_expression_line, set_function_line,
+    set_function_module, set_function_signature, set_struct_module, struct_type,
 };
 use crate::handles::{FieldId, FunctionId, NO_INDEX, StringId, StructId};
 use crate::tables::{
@@ -75,6 +75,10 @@ pub fn tables() -> Tables {
     declare_parameter(&mut tables, total, b"second", entry_pointer, 0);
     set_function_signature(&mut tables, total, word, StructId(NO_INDEX), false);
 
+    for (function, line) in [(main, 5), (close, 4), (open, 4), (total, 13)] {
+        set_function_line(&mut tables, function, line);
+    }
+
     let page = push_allocator_source(
         &mut tables,
         AllocatorSourceKind::Global,
@@ -117,13 +121,15 @@ pub fn tables() -> Tables {
         FieldId(NO_INDEX),
         &[],
     );
-    push_field_assignment_with(
+    set_expression_line(&mut tables, copied, 6);
+    push_field_assignment_at(
         &mut tables,
         entry_label,
         open,
         AssignmentSource::Allocation,
         allocate,
         copied,
+        6,
     );
 
     tables

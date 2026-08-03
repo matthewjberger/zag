@@ -43,6 +43,6 @@ ParseError.TooLarge
   confidence: high
 
 functions: 3
-  area: ported, signature only, the body is still to write
-  parse: ported, signature only, the body is still to write
-  main: still to write, the error set it can fail with has no name
+  area: ported, signature only, the body is still to write (main.zig:30)
+  parse: ported, signature only, the body is still to write (main.zig:38)
+  main: still to write, the error set it can fail with has no name (main.zig:46)

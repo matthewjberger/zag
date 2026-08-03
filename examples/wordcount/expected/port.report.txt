@@ -18,8 +18,8 @@ Counts.lines
   confidence: high
 
 functions: 4
-  Counts.init: still to write, the error set it can fail with has no name
-    no constructor: nothing the port could read assigns words
-  Counts.deinit: disappears, Drop frees what it freed
-  release: disappears, Drop frees what it freed
-  main: still to write, the error set it can fail with has no name
+  Counts.init: still to write, the error set it can fail with has no name (main.zig:9)
+    no constructor: words is set from words, which the port cannot spell (main.zig:24)
+  Counts.deinit: disappears, Drop frees what it freed (main.zig:31)
+  release: disappears, Drop frees what it freed (main.zig:36)
+  main: still to write, the error set it can fail with has no name (main.zig:40)

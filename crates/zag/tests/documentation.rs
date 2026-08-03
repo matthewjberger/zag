@@ -343,6 +343,9 @@ fn the_guide_explains_every_outcome_the_examples_produce() {
             let Some((_, outcome)) = line.trim_start().split_once(": ") else {
                 continue;
             };
+            // The trailing parenthesis is where the Zig was written, which the
+            // guide explains as a shape rather than a literal file and line.
+            let outcome = outcome.split(" (").next().unwrap_or(outcome);
             assert!(
                 guide.contains(outcome),
                 "docs/PORTING.md does not explain {outcome:?}, which {name} produces"

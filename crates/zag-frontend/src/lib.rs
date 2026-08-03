@@ -6,10 +6,11 @@ use std::collections::BTreeMap;
 use zag_facts::build::{
     declare_field, declare_function, declare_module, declare_parameter, intern, name_root_module,
     push_allocator_source, push_array_type, push_call, push_call_argument, push_expression,
-    push_field_assignment_with, push_integer_type, push_memory_operation, push_opaque_type,
+    push_field_assignment_at, push_integer_type, push_memory_operation, push_opaque_type,
     push_optional_type, push_pointer_type, push_slice_type, push_string, push_struct,
-    push_struct_type, push_unresolved_import, set_function_module, set_function_signature,
-    set_struct_deinit, set_struct_kind, set_struct_module, set_type_module,
+    push_struct_type, push_unresolved_import, set_expression_line, set_function_line,
+    set_function_module, set_function_signature, set_struct_deinit, set_struct_kind,
+    set_struct_module, set_type_module,
 };
 use zag_facts::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId, NO_INDEX, StringId, StructId,
@@ -408,6 +409,7 @@ fn declare_functions(
         let owner = look_up(&built.structs, scope, &function.owner).unwrap_or(StructId(NO_INDEX));
         let handle = declare_function(tables, function.name.as_bytes(), owner);
         set_function_module(tables, handle, scope.module);
+        set_function_line(tables, handle, function.line);
         for parameter in &function.parameters {
             let kind = resolve(tables, resolver, scope, &parameter.declared);
             let mut flags = 0;
@@ -1030,6 +1032,7 @@ fn declare_memory(
                 kind,
                 &initialiser.value,
             );
+            set_expression_line(tables, expression, initialiser.line);
             let resolved = through_locals(function, &initialiser.value);
             if let Some(allocator) = allocating_call(resolved) {
                 let source = classify_allocator(function, handle, sources, allocator);
@@ -1041,16 +1044,20 @@ fn declare_memory(
                     PlaceKind::FieldOfParameter,
                     field,
                 );
-                push_field_assignment_with(
+                push_field_assignment_at(
                     tables,
                     field,
                     handle,
                     AssignmentSource::Allocation,
                     operation,
                     expression,
+                    initialiser.line,
                 );
                 continue;
             }
+            // A value the port could not read is still an assignment. Dropping
+            // the row would make the report say nothing assigns the field,
+            // which is a claim about the Zig rather than about the reading.
             let source = if function
                 .parameters
                 .iter()
@@ -1060,15 +1067,16 @@ fn declare_memory(
             } else if is_literal(&initialiser.value) {
                 AssignmentSource::StaticLiteral
             } else {
-                continue;
+                AssignmentSource::Unknown
             };
-            push_field_assignment_with(
+            push_field_assignment_at(
                 tables,
                 field,
                 handle,
                 source,
                 MemoryOperationId(NO_INDEX),
                 expression,
+                initialiser.line,
             );
         }
 

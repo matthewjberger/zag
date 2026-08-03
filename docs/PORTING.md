@@ -151,6 +151,21 @@ no error type and neither can the port. A return type that carries a lifetime
 needs that lifetime tied to a parameter, and an arena lifetime has no parameter
 to tie to once the allocator is gone.
 
+### Where it was written
+
+Every function outcome ends with the file and line the Zig declares it on, and
+so does the expression a constructor could not spell:
+
+```
+  Counts.init: still to write, the error set it can fail with has no name (main.zig:9)
+    no constructor: words is set from words, which the port cannot spell (main.zig:24)
+```
+
+A location appears only when the tables recorded both a file and a line, since
+a line on its own sends a reader nowhere. Layout facts carry none: the compiler
+resolves a struct's size through reflection, which has no source location to
+give, and nothing in the report complains about layout.
+
 ### When the report is not enough
 
 `zag dump` prints the fact tables as text, one row per line, in the order the
