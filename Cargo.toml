@@ -1,0 +1,30 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Matthew Berger <matthewjordanberger@gmail.com>"]
+homepage = "https://github.com/matthewjberger/zag"
+repository = "https://github.com/matthewjberger/zag"
+license = "MIT OR Apache-2.0"
+edition = "2024"
+rust-version = "1.85"
+
+[workspace.dependencies]
+zag-analysis = { version = "0.1.0", path = "crates/zag-analysis" }
+zag-emit = { version = "0.1.0", path = "crates/zag-emit" }
+zag-facts = { version = "0.1.0", path = "crates/zag-facts" }
+zag-render = { version = "0.1.0", path = "crates/zag-render" }
+zag-repair = { version = "0.1.0", path = "crates/zag-repair" }
+clap = { version = "4", features = ["derive"] }
+proptest = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

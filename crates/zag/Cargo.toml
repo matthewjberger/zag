@@ -1,0 +1,20 @@
+[package]
+name = "zag"
+description = "A whole-program Zig to Rust porting pipeline driven by facts extracted from the Zig compiler"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clap.workspace = true
+zag-analysis.workspace = true
+zag-emit.workspace = true
+zag-facts.workspace = true
+zag-render.workspace = true
+
+[lints]
+workspace = true

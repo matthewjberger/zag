@@ -1,0 +1,16 @@
+[package]
+name = "zag-render"
+description = "A flat Rust syntax tree and the renderer that turns it into bytes"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+zag-facts.workspace = true
+
+[lints]
+workspace = true

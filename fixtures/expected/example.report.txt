@@ -1,0 +1,47 @@
+zag ownership report
+target: x86_64-linux
+fields: 9
+
+Buffer.data
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (release)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Buffer.length
+  class: value
+  confidence: high
+
+Header.magic
+  class: value
+  confidence: high
+
+Header.version
+  class: value
+  confidence: high
+
+Header.flags
+  class: value
+  confidence: high
+
+Node.label
+  class: arena
+  confidence: high
+  evidence: assigned from an allocation (parseNode)
+  evidence: allocator resolves to an arena
+
+Node.children
+  class: static
+  confidence: high
+  evidence: assigned from a static literal (parseNode)
+
+View.bytes
+  class: borrowed
+  confidence: medium
+  evidence: assigned from a parameter the caller retains (makeView)
+
+Cache.entries
+  class: unknown
+  confidence: low
+  evidence: no assignment to this field was found

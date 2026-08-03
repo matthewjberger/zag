@@ -1,0 +1,16 @@
+[package]
+name = "zag-verify"
+description = "Compiles the checked in fixture output so its layout assertions run in the build"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true
