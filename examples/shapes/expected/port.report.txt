@@ -46,4 +46,4 @@ functions: 4
   area: ported, signature only, the body is still to write (main.zig:30)
   shade: ported, signature and body (main.zig:40)
   parse: ported, signature only, the body is still to write (main.zig:48)
-  main: still to write, the error set it can fail with has no name (main.zig:56)
+  main: ported, signature only, the body is still to write (main.zig:56)

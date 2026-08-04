@@ -38,6 +38,20 @@ pub mod document {
     }
 }
 
+pub mod main {
+    #[derive(Clone, Copy)]
+    pub enum MainError {
+        MissingEquals,
+        UnterminatedSection,
+        EmptyKey,
+        OutOfMemory,
+    }
+
+    pub fn main() -> Result<(), MainError> {
+        todo!()
+    }
+}
+
 pub mod parser {
     pub fn trim(text: &[u8]) -> &[u8] {
         let _ = text;
@@ -51,6 +65,11 @@ pub mod parser {
 
     pub fn section_name(line: &[u8]) -> Result<&[u8], super::document::Error> {
         let _ = line;
+        todo!()
+    }
+
+    pub fn parse(source: &[u8]) -> Result<super::document::Document, super::main::MainError> {
+        let _ = source;
         todo!()
     }
 }

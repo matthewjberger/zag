@@ -120,6 +120,7 @@ struct FixtureFunctions {
     parse_node: FunctionId,
     parse_tree: FunctionId,
     make_view: FunctionId,
+    entry_point: FunctionId,
 }
 
 fn push_allocator_parameter(tables: &mut Tables, owner: FunctionId, name: &[u8], kind: TypeId) {
@@ -215,6 +216,7 @@ fn push_fixture_functions(
         parse_node,
         parse_tree,
         make_view,
+        entry_point,
     }
 }
 
@@ -261,6 +263,11 @@ fn push_fixture_flow(
     push_call_argument(tables, call, 0, global);
     let call = push_call(tables, functions.parse_tree, functions.parse_node);
     push_call_argument(tables, call, 0, arena);
+    // `main` reaches all three, which is how it comes to fail with whatever
+    // they fail with. It hands none of them an allocator.
+    push_call(tables, functions.entry_point, functions.make_buffer);
+    push_call(tables, functions.entry_point, functions.parse_tree);
+    push_call(tables, functions.entry_point, functions.make_view);
 
     let allocate_data = push_memory_operation(
         tables,

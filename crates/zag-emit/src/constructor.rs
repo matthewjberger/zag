@@ -10,8 +10,7 @@ use crate::lower::{Lowering, absent, lower_field_type, name_of};
 use zag_analysis::ownership::{Ownership, OwnershipClass};
 use zag_facts::build::push_string;
 use zag_facts::tables::{
-    ExpressionKind, PARAMETER_FLAG_ALLOCATOR, Tables, function_parameters, string_bytes,
-    struct_fields,
+    ExpressionKind, PARAMETER_FLAG_ALLOCATOR, Tables, fields_of, parameters_of, string_bytes,
 };
 use zag_facts::{ExpressionId, FieldId, FunctionId, NO_INDEX, StringId, StructId};
 use zag_render::ast::{Ast, NodeId, NodeKind, push_node};
@@ -45,7 +44,7 @@ fn is_writable(tables: &Tables, expression: ExpressionId) -> bool {
 }
 
 fn parameter_name(tables: &Tables, function: FunctionId, index: u32) -> Vec<u8> {
-    function_parameters(&tables.functions, function)
+    parameters_of(tables, function)
         .nth(index as usize)
         .map(|row| string_bytes(&tables.strings, tables.parameters.name[row]).to_vec())
         .unwrap_or_default()
@@ -283,7 +282,7 @@ pub fn constructor_for(
 ) -> Result<FunctionId, Refusal> {
     let function = crate::index::init_of(lowering.index, owner).ok_or(Refusal::NoInit)?;
     let mut fields = 0;
-    for row in struct_fields(&tables.structs, owner) {
+    for row in fields_of(tables, owner) {
         let field = FieldId(row as u32);
         let expression = assignment_for(tables, lowering.index, function, field)
             .ok_or(Refusal::NothingAssigns(field))?;
@@ -393,7 +392,7 @@ pub fn lower_constructor(
     let function = writable_init(tables, ownership, lowering, owner)?;
 
     let mut values = Vec::new();
-    for row in struct_fields(&tables.structs, owner) {
+    for row in fields_of(tables, owner) {
         let field = FieldId(row as u32);
         let expression = assignment_for(tables, lowering.index, function, field)?;
         let value = lower_value(ast, tables, ownership, function, field, expression);
@@ -415,7 +414,7 @@ pub fn lower_constructor(
 
     let mut children = Vec::new();
     let mut count = 0;
-    for row in function_parameters(&tables.functions, function) {
+    for row in parameters_of(tables, function) {
         // A parameter range that runs off the end of the table is a corrupt
         // fact file, which is a row to drop rather than a reason to stop.
         let (Some(&flags), Some(&declared)) = (

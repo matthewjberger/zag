@@ -33,7 +33,7 @@ Grid.generation
   confidence: high
 
 functions: 11
-  Grid.init: still to write, the error set it can fail with has no name (main.zig:14)
+  Grid.init: ported, signature only, the body is still to write (main.zig:14)
     no constructor: cells is set from allocator.alloc(u8, area), which the port cannot spell (main.zig:17)
   Grid.deinit: disappears, Drop frees what it freed (main.zig:25)
   Grid.index: ported, signature and body (main.zig:30)
@@ -44,4 +44,4 @@ functions: 11
   Grid.step: ported, signature only, the body is still to write (main.zig:75)
   Grid.population: ported, signature only, the body is still to write (main.zig:95)
   glider: ported, signature only, the body is still to write (main.zig:104)
-  main: still to write, the error set it can fail with has no name (main.zig:113)
+  main: ported, signature only, the body is still to write (main.zig:113)

@@ -1,5 +1,6 @@
 pub mod body;
 pub mod constructor;
+pub mod failure;
 pub mod function;
 pub mod index;
 pub mod layout;

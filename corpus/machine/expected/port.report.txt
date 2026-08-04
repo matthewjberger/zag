@@ -95,7 +95,7 @@ functions: 10
   Machine.popNumber: ported, signature only, the body is still to write (main.zig:37)
   Machine.top: ported, signature and body (main.zig:45)
   Machine.run: ported, signature only, the body is still to write (main.zig:52)
-  main: still to write, the error set it can fail with has no name (main.zig:96)
+  main: ported, signature only, the body is still to write (main.zig:96)
   push: ported, signature only, the body is still to write (opcode.zig:36)
   plain: ported, signature and body (opcode.zig:40)
   describe: still to write, what it returns borrows and nothing was passed in to borrow from (opcode.zig:44)

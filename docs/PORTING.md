@@ -134,10 +134,18 @@ The report ends with what became of every function.
 | `disappears, Drop frees what it freed` | delete the Zig `deinit`, `Box` already does its job |
 | `ported, signature only, the body is still to write` | fill in the `todo!()`, the signature around it is settled |
 | `still to write, what it returns did not resolve` | find the type the frontend could not read, usually a generic or a comptime result |
-| `still to write, the error set it can fail with has no name` | give the Zig a named error set, or decide the Rust error type yourself |
 | `still to write, what it returns borrows from an arena the port drops` | decide who owns the result, since the arena does not survive the port |
 | `still to write, what it returns borrows and no parameter can carry the lifetime` | decide what the result borrows from and put it in the signature |
 | `still to write, what it returns borrows and nothing was passed in to borrow from` | it returns a slice and takes no reference of its own. Return an owned value, or take the buffer it reads from as an argument |
+
+A function whose Zig wrote `!T` named no error set, because Zig generates one
+from the body. The port names what Zig would generate: every set its callees
+fail with, and `OutOfMemory` where it allocates. Where that is one set the
+program already declared, the signature says that; otherwise the port declares
+`<Owner><Function>Error` beside it, and functions that fail the same way share
+one. It reads the calls and the allocations rather than the body, so it can be
+wider than what Zig infers, and a variant nobody constructs is the cost of
+that.
 
 Where an `init` produced no constructor, the line under it says which field
 stopped it.

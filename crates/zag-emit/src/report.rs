@@ -145,7 +145,7 @@ fn declared_deinit_disappears(
         return false;
     }
     let mut freed = 0;
-    for row in zag_facts::tables::struct_fields(&tables.structs, owner) {
+    for row in zag_facts::tables::fields_of(tables, owner) {
         let frees = field_evidence(ownership, FieldId(row as u32)).any(|slot| {
             ownership.evidence_kind.get(slot) == Some(&EvidenceKind::FreedInDeinitClosure)
         });
@@ -230,6 +230,7 @@ pub fn disposition(
         .is_some_and(|body| {
             crate::body::signature_is_settled(tables, ownership, function)
                 && crate::body::is_spellable(tables, body, 0)
+                && !crate::body::reads_the_allocator(tables, function, body, 0)
         }) {
         true => Disposition::Ported,
         false => Disposition::Signature,
@@ -436,6 +437,7 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
     }
     let lifetimes = crate::lower::lifetimes_by_type(tables, ownership);
     let lookups = crate::index::build_index(tables);
+    let failures = crate::failure::resolve_failures(tables);
     let qualified = zag_facts::tables::has_submodules(&tables.modules);
     out.push(b'\n');
     write_line(out, &[b"functions: ", count.to_string().as_bytes()]);
@@ -457,7 +459,7 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
             .get(index)
             .copied()
             .unwrap_or(zag_facts::tables::ROOT_MODULE);
-        let lowering = crate::lower::lowering(&lifetimes, &lookups, module, qualified);
+        let lowering = crate::lower::lowering(&lifetimes, &lookups, &failures, module, qualified);
         let outcome = outcome_text(disposition(tables, ownership, lowering, handle));
         let at = located(
             tables,

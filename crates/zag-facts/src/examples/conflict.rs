@@ -1,13 +1,14 @@
 use crate::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern, name_root_module,
-    push_allocator_source, push_call, push_call_argument, push_field_assignment, push_integer_type,
-    push_memory_operation, push_opaque_type, push_slice_type, push_void_type, set_function_line,
-    set_function_signature, struct_type,
+    push_allocator_source, push_body_expression, push_call, push_call_argument, push_expression,
+    push_field_assignment, push_integer_type, push_memory_operation, push_opaque_type,
+    push_slice_type, push_string, push_void_type, set_expression_line, set_function_body,
+    set_function_line, set_function_signature, struct_type,
 };
-use crate::handles::{FieldId, FunctionId, NO_INDEX, StructId};
+use crate::handles::{FieldId, FunctionId, NO_INDEX, StringId, StructId};
 use crate::tables::{
-    AllocatorSourceKind, AssignmentSource, MemoryOperationKind, PARAMETER_FLAG_ALLOCATOR,
-    PlaceKind, Tables, empty_tables,
+    AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind,
+    PARAMETER_FLAG_ALLOCATOR, PlaceKind, Tables, empty_tables,
 };
 
 pub fn tables() -> Tables {
@@ -114,6 +115,41 @@ pub fn tables() -> Tables {
         AssignmentSource::Allocation,
         allocate,
     );
+
+    // `return makeCache(<allocator>, bytes);`, which is the whole of both
+    // callers. The allocator argument does not survive into the port, so what
+    // is left is the one the signature keeps, and the call is an error union
+    // already so nothing wraps it.
+    for (function, line) in [(from_heap, 15), (from_arena, 19)] {
+        let named = push_string(&mut tables.strings, b"bytes");
+        let handed =
+            push_body_expression(&mut tables, ExpressionKind::Identifier, named, line, &[]);
+        let called = push_expression(
+            &mut tables,
+            ExpressionKind::Call,
+            StringId(NO_INDEX),
+            make_cache.0,
+            cache_type,
+            FieldId(NO_INDEX),
+            &[handed],
+        );
+        set_expression_line(&mut tables, called, line);
+        let returned = push_body_expression(
+            &mut tables,
+            ExpressionKind::Return,
+            StringId(NO_INDEX),
+            line,
+            &[called],
+        );
+        let body = push_body_expression(
+            &mut tables,
+            ExpressionKind::Block,
+            StringId(NO_INDEX),
+            line,
+            &[returned],
+        );
+        set_function_body(&mut tables, function, body);
+    }
 
     tables
 }

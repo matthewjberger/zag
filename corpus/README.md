@@ -111,6 +111,15 @@ the struct it builds is the one the signature says the function returns, which
 is written down rather than inferred. That took the corpus from four ported
 bodies to fourteen.
 
+`!T` no longer stops a signature. Zig generates an error set from the body
+there, and the port names what Zig would generate: the union of the sets its
+callees fail with, plus `OutOfMemory` where it allocates. Where that comes to
+one set the Zig already declared, the port keeps that name; otherwise it
+declares one, and two functions that fail the same way share it so a call
+between them still compiles. It works from the calls and the allocations the
+tables record rather than from the spelling of a body, which is what makes the
+answer the same whether the tables were read or written by hand.
+
 `undefined` joins `null` in the refusals. It is uninitialised memory, which
 Rust has no safe spelling for at all.
 

@@ -1,8 +1,8 @@
 use zag_analysis::ownership::{Ownership, OwnershipClass};
 use zag_facts::build::push_string;
 use zag_facts::tables::{
-    ContainerKind, STRUCT_FLAG_EXTERN, TYPE_FLAG_SIGNED, Tables, TypeKind, string_bytes,
-    struct_count, struct_fields,
+    ContainerKind, STRUCT_FLAG_EXTERN, TYPE_FLAG_SIGNED, Tables, TypeKind, fields_of, string_bytes,
+    struct_count,
 };
 use zag_facts::tables::{ROOT_MODULE, has_submodules, module_count};
 use zag_facts::{ModuleId, NO_INDEX, StringId, StructId, TypeId};
@@ -49,6 +49,10 @@ pub struct Lowering<'a> {
     /// rather than passed alongside because everything that already takes a
     /// `Lowering` needs them.
     pub index: &'a crate::index::Index,
+    /// What each function can fail with, for the ones whose Zig named no error
+    /// set. Carried here for the same reason the indexes are: it is settled
+    /// once for the whole program.
+    pub failures: &'a crate::failure::Failures,
     pub module: ModuleId,
     pub qualified: bool,
 }
@@ -56,12 +60,14 @@ pub struct Lowering<'a> {
 pub fn lowering<'a>(
     lifetimes: &'a [u32],
     index: &'a crate::index::Index,
+    failures: &'a crate::failure::Failures,
     module: ModuleId,
     qualified: bool,
 ) -> Lowering<'a> {
     Lowering {
         lifetimes,
         index,
+        failures,
         module,
         qualified,
     }
@@ -333,7 +339,7 @@ fn struct_flags(tables: &Tables, ownership: &Ownership, owner: StructId) -> u32 
     if is_extern(tables, owner) {
         flags |= STRUCT_FLAG_REPR_C;
     }
-    for row in struct_fields(&tables.structs, owner) {
+    for row in fields_of(tables, owner) {
         match ownership.class.get(row) {
             Some(OwnershipClass::Borrowed) => flags |= STRUCT_FLAG_BORROW_LIFETIME,
             Some(OwnershipClass::Arena) => flags |= STRUCT_FLAG_ARENA_LIFETIME,
@@ -377,7 +383,7 @@ fn lower_enum(
     carries_payloads: bool,
 ) -> NodeId {
     let mut variants = Vec::new();
-    for row in struct_fields(&tables.structs, owner) {
+    for row in fields_of(tables, owner) {
         let text = pascal_case(&name_of(tables, tables.fields.name.get(row)));
         let name = push_string(&mut ast.strings, &text);
         let mut payload = Vec::new();
@@ -408,7 +414,7 @@ fn lower_enum(
     // Only a union writes a payload, so only a union has anything a variant
     // could be stopped from copying by.
     if carries_payloads {
-        for row in struct_fields(&tables.structs, owner) {
+        for row in fields_of(tables, owner) {
             let declared = tables
                 .fields
                 .field_type
@@ -427,7 +433,7 @@ fn lower_enum(
 
 /// Zig spells a variant in snake case and Rust spells it in Pascal case, so a
 /// port that keeps the Zig spelling is a port the compiler complains about.
-fn pascal_case(name: &[u8]) -> Vec<u8> {
+pub fn pascal_case(name: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(name.len());
     let mut capitalise = true;
     for byte in name {
@@ -461,7 +467,7 @@ fn lower_struct(
     owner: StructId,
 ) -> NodeId {
     let mut fields = Vec::new();
-    for row in struct_fields(&tables.structs, owner) {
+    for row in fields_of(tables, owner) {
         let (Some(&field_type), Some(&class)) =
             (tables.fields.field_type.get(row), ownership.class.get(row))
         else {
@@ -522,7 +528,7 @@ fn lower_layout_assertions(
         0,
         &[],
     ));
-    for row in struct_fields(&tables.structs, owner) {
+    for row in fields_of(tables, owner) {
         let Some(&offset) = tables.fields.offset.get(row) else {
             continue;
         };
@@ -551,6 +557,47 @@ fn lower_module(
     lowering: Lowering,
     items: &mut Vec<NodeId>,
 ) {
+    // The sets Zig would have generated, declared before anything that returns
+    // one, and only once however many functions share it.
+    let mut generated: Vec<&[u8]> = Vec::new();
+    for failing in lowering.failures.iter().flatten() {
+        let crate::failure::Failing::Generated {
+            name,
+            module,
+            variants,
+        } = failing
+        else {
+            continue;
+        };
+        if *module != lowering.module || generated.contains(&name.as_slice()) {
+            continue;
+        }
+        generated.push(name);
+        let named = push_string(&mut ast.strings, name);
+        let mut written = Vec::with_capacity(variants.len());
+        for variant in variants {
+            let text = pascal_case(variant);
+            let spelled = push_string(&mut ast.strings, &text);
+            written.push(push_node(
+                ast,
+                NodeKind::Variant,
+                spelled,
+                absent(),
+                0,
+                0,
+                &[],
+            ));
+        }
+        items.push(push_node(
+            ast,
+            NodeKind::Enum,
+            named,
+            absent(),
+            0,
+            STRUCT_FLAG_CLONE | STRUCT_FLAG_COPY,
+            &written,
+        ));
+    }
     for row in crate::index::structs_of(lowering.index, lowering.module) {
         let index = *row as usize;
         let owner = StructId(*row);
@@ -581,13 +628,14 @@ pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
     let mut ast = empty_ast();
     let lifetimes = lifetimes_by_type(tables, ownership);
     let lookups = crate::index::build_index(tables);
+    let failures = crate::failure::resolve_failures(tables);
     let qualified = has_submodules(&tables.modules);
     let mut items = Vec::new();
     lower_module(
         &mut ast,
         tables,
         ownership,
-        lowering(&lifetimes, &lookups, ROOT_MODULE, qualified),
+        lowering(&lifetimes, &lookups, &failures, ROOT_MODULE, qualified),
         &mut items,
     );
     for index in 1..module_count(&tables.modules) {
@@ -597,7 +645,7 @@ pub fn lower(tables: &Tables, ownership: &Ownership) -> Ast {
             &mut ast,
             tables,
             ownership,
-            lowering(&lifetimes, &lookups, module, qualified),
+            lowering(&lifetimes, &lookups, &failures, module, qualified),
             &mut inside,
         );
         if inside.is_empty() {

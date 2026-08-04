@@ -1,3 +1,12 @@
+#[derive(Clone, Copy)]
+pub enum MainError {
+    OutOfMemory,
+}
+
+pub fn main() -> Result<(), MainError> {
+    todo!()
+}
+
 pub mod entry {
     #[derive(Clone)]
     pub struct Entry {
@@ -7,6 +16,12 @@ pub mod entry {
 }
 
 pub mod store {
+    pub fn open(label: &[u8], amount: u32) -> Result<super::entry::Entry, super::MainError> {
+        let _ = label;
+        let _ = amount;
+        todo!()
+    }
+
     pub fn total(first: &super::entry::Entry, second: &super::entry::Entry) -> u32 {
         first.amount + second.amount
     }

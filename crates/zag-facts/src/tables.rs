@@ -482,6 +482,23 @@ pub fn struct_fields(structs: &Structs, id: StructId) -> std::ops::Range<usize> 
     start..start.saturating_add(count as usize)
 }
 
+/// The fields a struct claims, bounded by the ones that exist. A range running
+/// past the end of the table is a corrupt fact file, and a reader that walks it
+/// anyway writes a row per number it was handed.
+pub fn fields_of(tables: &Tables, id: StructId) -> std::ops::Range<usize> {
+    let range = struct_fields(&tables.structs, id);
+    let end = range.end.min(field_count(&tables.fields));
+    range.start.min(end)..end
+}
+
+/// The parameters a function claims, bounded by the ones that exist, for the
+/// same reason `fields_of` is bounded.
+pub fn parameters_of(tables: &Tables, id: FunctionId) -> std::ops::Range<usize> {
+    let range = function_parameters(&tables.functions, id);
+    let end = range.end.min(parameter_count(&tables.parameters));
+    range.start.min(end)..end
+}
+
 pub fn function_parameters(functions: &Functions, id: FunctionId) -> std::ops::Range<usize> {
     let index = id.0 as usize;
     let (Some(&start), Some(&count)) = (

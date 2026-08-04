@@ -1,3 +1,8 @@
+#[derive(Clone, Copy)]
+pub enum BufferInitError {
+    OutOfMemory,
+}
+
 #[derive(Clone)]
 pub struct Buffer {
     pub data: Box<[u8]>,
@@ -43,8 +48,17 @@ pub struct Cache {
     pub entries: Option<core::ptr::NonNull<[u8]>>,
 }
 
+pub fn make_buffer(bytes: &[u8]) -> Result<Buffer, BufferInitError> {
+    let _ = bytes;
+    todo!()
+}
+
 pub fn make_view<'a>(bytes: &'a [u8]) -> View<'a> {
     View {
         bytes,
     }
+}
+
+pub fn main() -> Result<(), BufferInitError> {
+    todo!()
 }

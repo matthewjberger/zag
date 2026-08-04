@@ -32,4 +32,4 @@ Packet.payload
 functions: 3
   Packet.init: ported, as the constructor (main.zig:26)
   Packet.deinit: disappears, Drop frees what it freed (main.zig:40)
-  main: still to write, the error set it can fail with has no name (main.zig:45)
+  main: ported, signature only, the body is still to write (main.zig:45)

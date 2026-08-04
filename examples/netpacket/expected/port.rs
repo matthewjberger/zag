@@ -1,4 +1,9 @@
 #[derive(Clone, Copy)]
+pub enum PacketInitError {
+    OutOfMemory,
+}
+
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Header {
     pub magic: u32,
@@ -32,4 +37,8 @@ impl Packet {
             payload: Box::from(body),
         }
     }
+}
+
+pub fn main() -> Result<(), PacketInitError> {
+    todo!()
 }

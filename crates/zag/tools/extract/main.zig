@@ -401,11 +401,23 @@ fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
     if (tree.fullWhile(node)) |loop| {
         // A capture turns the condition into a pattern, which is a different
         // shape from a plain loop, so only the plain one is reported.
-        if (loop.payload_token == null and loop.ast.cont_expr == .none and
-            loop.ast.else_expr == .none)
-        {
+        if (loop.payload_token == null and loop.ast.else_expr == .none) {
             try emitExpression(walker, loop.ast.cond_expr);
             try emitExpression(walker, loop.ast.then_expr);
+            // `while (c) : (step)` runs the step at the end of every turn, so
+            // the reader puts it at the end of the body.
+            if (loop.ast.cont_expr.unwrap()) |step| {
+                try emitStatement(walker, step);
+                std.debug.print("expression {s} {d} kind=while line={d} left={d} right={d} otherwise={d}\n", .{
+                    walker.owner,
+                    raw,
+                    line,
+                    @intFromEnum(loop.ast.cond_expr),
+                    @intFromEnum(loop.ast.then_expr),
+                    @intFromEnum(step),
+                });
+                return;
+            }
             std.debug.print("expression {s} {d} kind=while line={d} left={d} right={d}\n", .{
                 walker.owner,
                 raw,

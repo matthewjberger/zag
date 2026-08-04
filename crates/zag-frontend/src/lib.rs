@@ -1284,7 +1284,7 @@ fn arm_pattern(tables: &Tables, owner: StructId, pattern: &str, capture: &str) -
 }
 
 /// Zig spells a variant in snake case and Rust spells it in Pascal case.
-fn pascal_case(name: &[u8]) -> Vec<u8> {
+pub(crate) fn pascal_case(name: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(name.len());
     let mut capitalise = true;
     for byte in name {
@@ -1359,6 +1359,68 @@ fn returned_struct(
     let text = String::from_utf8_lossy(zag_facts::tables::string_bytes(&tables.strings, name))
         .into_owned();
     look_up(&built.structs, scope, &text)
+}
+
+/// Whether the expression is itself something that can fail, which is what
+/// tells a value on the way out from an error union already on its way out.
+fn returns_a_failure(tables: &Tables, built: &Built, expression: ExpressionId) -> bool {
+    let index = expression.0 as usize;
+    let called = match tables.expressions.kind.get(index).copied() {
+        Some(ExpressionKind::Call) => tables
+            .expressions
+            .parameter
+            .get(index)
+            .copied()
+            .filter(|callee| *callee != NO_INDEX)
+            .map(FunctionId),
+        Some(ExpressionKind::Method) => {
+            let name = String::from_utf8_lossy(zag_facts::tables::string_bytes(
+                &tables.strings,
+                tables
+                    .expressions
+                    .text
+                    .get(index)
+                    .copied()
+                    .unwrap_or(StringId(NO_INDEX)),
+            ))
+            .into_owned();
+            method_handle(tables, built, expression, &name)
+        }
+        _ => None,
+    };
+    called.is_some_and(|handle| {
+        tables
+            .functions
+            .flags
+            .get(handle.0 as usize)
+            .is_some_and(|flags| flags & zag_facts::tables::FUNCTION_FLAG_FALLIBLE != 0)
+    })
+}
+
+/// The function a method call reaches, through the receiver's own type.
+fn method_handle(
+    tables: &Tables,
+    _built: &Built,
+    call: ExpressionId,
+    name: &str,
+) -> Option<FunctionId> {
+    let receiver = zag_facts::tables::expression_children(&tables.expressions, call.0 as usize)
+        .next()
+        .and_then(|slot| tables.expressions.children.get(slot).copied())?;
+    let kind = tables
+        .expressions
+        .result
+        .get(receiver.0 as usize)
+        .copied()
+        .filter(|kind| kind.0 != NO_INDEX)?;
+    let owner = struct_of(tables, kind, 0)?;
+    (0..zag_facts::tables::function_count(&tables.functions))
+        .find(|row| {
+            tables.functions.owner.get(*row).copied() == Some(owner)
+                && zag_facts::tables::string_bytes(&tables.strings, tables.functions.name[*row])
+                    == name.as_bytes()
+        })
+        .map(|row| FunctionId(row as u32))
 }
 
 /// Whether the expression names a variant of an error set, which is what
@@ -1833,14 +1895,44 @@ fn translate_node(
                 _ => unsupported(tables),
             }
         }
+        // A Zig loop may carry a step that runs at the end of every turn, and
+        // Rust has nowhere to put one, so it goes at the end of the body where
+        // it already ran.
         "while" => match (left, right) {
-            (Some(condition), Some(body)) => push_body_expression(
-                tables,
-                ExpressionKind::While,
-                StringId(NO_INDEX),
-                node.line,
-                &[condition, body],
-            ),
+            (Some(condition), Some(body)) => {
+                let body = match otherwise {
+                    Some(step) => {
+                        let mut statements: Vec<ExpressionId> =
+                            zag_facts::tables::expression_children(
+                                &tables.expressions,
+                                body.0 as usize,
+                            )
+                            .filter_map(|slot| tables.expressions.children.get(slot).copied())
+                            .collect();
+                        if tables.expressions.kind.get(body.0 as usize)
+                            != Some(&ExpressionKind::Block)
+                        {
+                            statements = vec![body];
+                        }
+                        statements.push(step);
+                        push_body_expression(
+                            tables,
+                            ExpressionKind::Block,
+                            StringId(NO_INDEX),
+                            node.line,
+                            &statements,
+                        )
+                    }
+                    None => body,
+                };
+                push_body_expression(
+                    tables,
+                    ExpressionKind::While,
+                    StringId(NO_INDEX),
+                    node.line,
+                    &[condition, body],
+                )
+            }
             _ => unsupported(tables),
         },
         "for" => match (left, right) {
@@ -1886,6 +1978,20 @@ fn translate_node(
             // and the error are both spelled at the boundary rather than
             // inferred from the body.
             if fallible {
+                // `return f()` where `f` can fail propagates the error union
+                // rather than a value, so there is nothing to wrap. Zig writes
+                // the two the same way and Rust does not.
+                if let Some(value) = left
+                    && returns_a_failure(tables, built_names, value)
+                {
+                    return push_body_expression(
+                        tables,
+                        ExpressionKind::Return,
+                        StringId(NO_INDEX),
+                        node.line,
+                        &[value],
+                    );
+                }
                 let wrapped = match left {
                     Some(value) => {
                         let constructor = if names_an_error(tables, built_names, scope, value) {

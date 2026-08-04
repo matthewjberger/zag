@@ -31,6 +31,10 @@ pub mod main {
             todo!()
         }
     }
+
+    pub fn main() -> Result<(), super::opcode::Fault> {
+        todo!()
+    }
 }
 
 pub mod opcode {

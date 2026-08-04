@@ -9,10 +9,10 @@ Cache.entries
   evidence: allocator does not resolve to one allocator
 
 functions: 4
-  makeCache: still to write, the error set it can fail with has no name (main.zig:10)
-  fromHeap: still to write, the error set it can fail with has no name (main.zig:14)
-  fromArena: still to write, the error set it can fail with has no name (main.zig:18)
-  main: still to write, the error set it can fail with has no name (main.zig:22)
+  makeCache: ported, signature only, the body is still to write (main.zig:10)
+  fromHeap: ported, signature and body (main.zig:14)
+  fromArena: ported, signature and body (main.zig:18)
+  main: ported, signature only, the body is still to write (main.zig:22)
 
 allocator conflicts: 1
   makeCache takes allocator from callers that disagree

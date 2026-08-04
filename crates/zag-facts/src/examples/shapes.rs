@@ -1,8 +1,8 @@
 use crate::build::{
     declare_field, declare_function, declare_parameter, declare_struct, intern, name_root_module,
-    push_body_expression, push_integer_type, push_opaque_type, push_slice_type, push_string,
-    push_void_type, set_function_body, set_function_line, set_function_signature, set_struct_kind,
-    struct_type,
+    push_body_expression, push_call, push_integer_type, push_opaque_type, push_slice_type,
+    push_string, push_void_type, set_function_body, set_function_line, set_function_signature,
+    set_struct_kind, struct_type,
 };
 use crate::handles::{ExpressionId, NO_INDEX, StringId, StructId};
 use crate::tables::{ContainerKind, ExpressionKind, Tables, empty_tables};
@@ -64,6 +64,10 @@ pub fn tables() -> Tables {
 
     let body = shade_body(&mut tables);
     set_function_body(&mut tables, shade, body);
+
+    // `main` reaches `parse`, which is how it comes to fail with what `parse`
+    // fails with.
+    push_call(&mut tables, main, parse);
 
     tables
 }

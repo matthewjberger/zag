@@ -551,16 +551,52 @@ fn struct_behind(tables: &Tables, kind: TypeId, depth: u32) -> Option<StructId> 
 /// written against a type that says nothing about what it points at, so there
 /// is nothing to write it against yet.
 pub fn signature_is_settled(tables: &Tables, ownership: &Ownership, function: FunctionId) -> bool {
-    zag_facts::tables::function_parameters(&tables.functions, function).all(|row| {
+    zag_facts::tables::parameters_of(tables, function).all(|row| {
         let Some(declared) = tables.parameters.parameter_type.get(row).copied() else {
             return true;
         };
         let Some(owner) = struct_behind(tables, declared, 0) else {
             return true;
         };
-        zag_facts::tables::struct_fields(&tables.structs, owner)
+        zag_facts::tables::fields_of(tables, owner)
             .all(|field| ownership.class.get(field) != Some(&OwnershipClass::Unknown))
     })
+}
+
+/// Whether the body names the allocator it was handed. The port allocates
+/// through the types themselves, so the parameter disappears from the
+/// signature, and a body that reads it is written against an argument that is
+/// no longer there.
+pub fn reads_the_allocator(
+    tables: &Tables,
+    function: FunctionId,
+    expression: ExpressionId,
+    depth: u32,
+) -> bool {
+    if depth >= MAXIMUM_DEPTH {
+        return false;
+    }
+    if kind_of(tables, expression) == Some(ExpressionKind::Identifier) {
+        let text = text_bytes(tables, expression);
+        let named = zag_facts::tables::parameters_of(tables, function).any(|row| {
+            tables
+                .parameters
+                .flags
+                .get(row)
+                .is_some_and(|flags| flags & zag_facts::tables::PARAMETER_FLAG_ALLOCATOR != 0)
+                && tables
+                    .parameters
+                    .name
+                    .get(row)
+                    .is_some_and(|name| string_bytes(&tables.strings, *name) == text)
+        });
+        if named {
+            return true;
+        }
+    }
+    children_of(tables, expression)
+        .into_iter()
+        .any(|child| reads_the_allocator(tables, function, child, depth + 1))
 }
 
 pub fn lower_body(
@@ -582,7 +618,7 @@ pub fn lower_body(
     if kind_of(tables, body) != Some(ExpressionKind::Block) {
         return None;
     }
-    if !is_spellable(tables, body, 0) {
+    if !is_spellable(tables, body, 0) || reads_the_allocator(tables, function, body, 0) {
         return None;
     }
     let children = children_of(tables, body);

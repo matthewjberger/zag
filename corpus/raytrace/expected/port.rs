@@ -52,6 +52,13 @@ pub mod geometry {
 
 pub mod image {
     #[derive(Clone, Copy)]
+    pub enum ImageInitError {
+        ZeroSized,
+        OutOfBounds,
+        OutOfMemory,
+    }
+
+    #[derive(Clone, Copy)]
     #[repr(C)]
     pub struct Header {
         pub magic: u16,
@@ -77,6 +84,11 @@ pub mod image {
     }
 
     impl Image {
+        pub fn init(width: u32, height: u32) -> Result<Image, ImageInitError> {
+            let _ = width;
+            let _ = height;
+            todo!()
+        }
         pub fn header(&self) -> Header {
             Header {
                 magic: 0x5036,
@@ -130,9 +142,24 @@ pub mod main {
         let _ = row;
         todo!()
     }
+
+    pub fn render(world: &super::scene::Scene, canvas: &mut super::image::Image) -> Result<(), super::image::Error> {
+        let _ = world;
+        let _ = canvas;
+        todo!()
+    }
+
+    pub fn main() -> Result<(), super::image::ImageInitError> {
+        todo!()
+    }
 }
 
 pub mod scene {
+    #[derive(Clone, Copy)]
+    pub enum BuildError {
+        OutOfMemory,
+    }
+
     #[derive(Clone)]
     pub struct Scene {
         pub shapes: Option<core::ptr::NonNull<[super::geometry::Shape]>>,
@@ -149,6 +176,10 @@ pub mod scene {
             let _ = point;
             todo!()
         }
+    }
+
+    pub fn build() -> Result<Scene, BuildError> {
+        todo!()
     }
 }
 

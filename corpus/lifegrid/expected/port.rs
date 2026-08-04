@@ -1,4 +1,9 @@
 pub mod main {
+    #[derive(Clone, Copy)]
+    pub enum GridInitError {
+        OutOfMemory,
+    }
+
     #[derive(Clone)]
     pub struct Grid {
         pub cells: Box<[u8]>,
@@ -9,6 +14,11 @@ pub mod main {
     }
 
     impl Grid {
+        pub fn init(width: u32, height: u32) -> Result<Grid, GridInitError> {
+            let _ = width;
+            let _ = height;
+            todo!()
+        }
         pub fn index(&self, column: u32, row: u32) -> u32 {
             row * self.width + column
         }
@@ -40,6 +50,10 @@ pub mod main {
 
     pub fn glider(grid: &mut Grid) {
         let _ = grid;
+        todo!()
+    }
+
+    pub fn main() -> Result<(), GridInitError> {
         todo!()
     }
 }

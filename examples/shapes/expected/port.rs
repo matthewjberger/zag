@@ -41,3 +41,7 @@ pub fn parse(text: &[u8]) -> Result<Colour, ParseError> {
     let _ = text;
     todo!()
 }
+
+pub fn main() -> Result<(), ParseError> {
+    todo!()
+}

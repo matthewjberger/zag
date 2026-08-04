@@ -1,3 +1,8 @@
+#[derive(Clone, Copy)]
+pub enum FrameInitError {
+    OutOfMemory,
+}
+
 #[derive(Clone)]
 pub struct Frame {
     pub channels: [u32; 4],
@@ -13,4 +18,8 @@ impl Frame {
             source: Box::from(source),
         }
     }
+}
+
+pub fn main() -> Result<(), FrameInitError> {
+    todo!()
 }

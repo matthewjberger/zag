@@ -29,5 +29,5 @@ Document.separators
   evidence: assigned from a static literal (parse)
 
 functions: 2
-  parse: still to write, the error set it can fail with has no name (main.zig:17)
-  main: still to write, the error set it can fail with has no name (main.zig:40)
+  parse: still to write, what it returns borrows from an arena the port drops (main.zig:17)
+  main: ported, signature only, the body is still to write (main.zig:40)

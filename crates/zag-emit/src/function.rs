@@ -11,7 +11,7 @@ use zag_analysis::ownership::{Ownership, OwnershipClass};
 use zag_facts::build::push_string;
 use zag_facts::tables::{
     FUNCTION_FLAG_FALLIBLE, PARAMETER_FLAG_ALLOCATOR, PARAMETER_FLAG_MUTABLE, Tables,
-    function_parameters, is_reference_type, string_bytes,
+    is_reference_type, parameters_of, string_bytes,
 };
 use zag_facts::{FunctionId, NO_INDEX, StructId, TypeId};
 use zag_render::ast::{
@@ -62,7 +62,7 @@ fn receiver_text(tables: &Tables, row: usize) -> &'static [u8] {
 /// the struct it belongs to, which Rust spells as part of the signature rather
 /// than as a parameter.
 fn receiver_row(tables: &Tables, function: FunctionId) -> Option<usize> {
-    let row = function_parameters(&tables.functions, function).next()?;
+    let row = parameters_of(tables, function).next()?;
     let owner = tables.functions.owner.get(function.0 as usize).copied()?;
     if owner.0 == NO_INDEX {
         return None;
@@ -106,7 +106,7 @@ fn lifetimes_to_declare(
 }
 
 fn has_reference_parameter(tables: &Tables, function: FunctionId) -> bool {
-    function_parameters(&tables.functions, function).any(|row| {
+    parameters_of(tables, function).any(|row| {
         tables
             .parameters
             .flags
@@ -177,7 +177,14 @@ fn lower_parameter(
     } else {
         lower_field_type(ast, tables, lowering, declared, OwnershipClass::Value)
     };
-    let text = string_bytes(&tables.strings, tables.parameters.name[row]).to_vec();
+    // A parameter range running past the end of the column is a corrupt fact
+    // file, which is a row to write nothing for rather than a reason to stop.
+    let text = tables
+        .parameters
+        .name
+        .get(row)
+        .map(|name| string_bytes(&tables.strings, *name).to_vec())
+        .unwrap_or_default();
     let name = push_string(&mut ast.strings, &text);
     push_node(ast, NodeKind::Parameter, name, absent(), 0, 0, &[kind])
 }
@@ -187,12 +194,42 @@ fn lower_parameter(
 /// same as any other type, and a bare name compiles only where it happens to
 /// have been declared.
 fn error_set_name(tables: &Tables, lowering: Lowering, function: FunctionId) -> Option<Vec<u8>> {
-    let set = tables
+    let declared = tables
         .functions
         .error_set
         .get(function.0 as usize)
         .copied()
-        .filter(|set| set.0 != NO_INDEX)?;
+        .filter(|set| set.0 != NO_INDEX);
+    // A `!T` names no set, and Zig generates one from the body. The port has
+    // to name that too, and where it could be worked out this is what it is
+    // called.
+    let set = match declared {
+        Some(set) => set,
+        None => match lowering.failures.get(function.0 as usize) {
+            Some(Some(crate::failure::Failing::Declared(set))) => *set,
+            Some(Some(crate::failure::Failing::Generated { name, module, .. })) => {
+                let mut path = Vec::new();
+                if lowering.qualified && *module != lowering.module {
+                    if lowering.module != zag_facts::tables::ROOT_MODULE {
+                        path.extend_from_slice(b"super::");
+                    }
+                    let named = tables
+                        .modules
+                        .name
+                        .get(module.0 as usize)
+                        .map(|text| string_bytes(&tables.strings, *text))
+                        .unwrap_or(b"");
+                    if !named.is_empty() {
+                        path.extend_from_slice(named);
+                        path.extend_from_slice(b"::");
+                    }
+                }
+                path.extend_from_slice(name);
+                return Some(path);
+            }
+            _ => return None,
+        },
+    };
     let text = name_of(tables, tables.structs.name.get(set.0 as usize));
     if text.is_empty() {
         return None;
@@ -373,7 +410,7 @@ pub fn lower_signature(
     };
     let mut children = Vec::new();
     let mut count = 0;
-    for row in function_parameters(&tables.functions, function) {
+    for row in parameters_of(tables, function) {
         // The allocator disappears, because the port allocates through the
         // types themselves rather than through a handle passed in.
         if receiver != Some(row)

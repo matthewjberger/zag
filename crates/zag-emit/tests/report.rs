@@ -26,8 +26,14 @@ fn outcome_of(tables: &Tables, function: FunctionId) -> Disposition {
     let analysis = analyze(tables);
     let lifetimes = zag_emit::lower::lifetimes_by_type(tables, &analysis.ownership);
     let lookups = zag_emit::index::build_index(tables);
-    let lowering =
-        zag_emit::lower::lowering(&lifetimes, &lookups, zag_facts::tables::ROOT_MODULE, false);
+    let failures = zag_emit::failure::resolve_failures(tables);
+    let lowering = zag_emit::lower::lowering(
+        &lifetimes,
+        &lookups,
+        &failures,
+        zag_facts::tables::ROOT_MODULE,
+        false,
+    );
     disposition(tables, &analysis.ownership, lowering, function)
 }
 

@@ -25,8 +25,8 @@ Counts.lines
   confidence: high
 
 functions: 4
-  Counts.init: still to write, the error set it can fail with has no name (main.zig:10)
+  Counts.init: ported, signature only, the body is still to write (main.zig:10)
     no constructor: words is set from words, which the port cannot spell (main.zig:26)
   Counts.deinit: disappears, Drop frees what it freed (main.zig:33)
   release: disappears, Drop frees what it freed (main.zig:38)
-  main: still to write, the error set it can fail with has no name (main.zig:43)
+  main: ported, signature only, the body is still to write (main.zig:43)
