@@ -27,8 +27,8 @@ pub mod store {
     }
 
     pub fn largest(entries: &[super::entry::Entry]) -> u32 {
-        let mut highest = 0;
-        for item in entries {
+        let mut highest: u32 = 0;
+        for item in entries.iter() {
             highest = highest.max(item.amount);
         }
         highest

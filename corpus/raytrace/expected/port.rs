@@ -105,15 +105,14 @@ pub mod image {
                 return Err(Error::OutOfBounds);
             }
             let at = self.offset(column, row);
-            self.red[at as usize] = channel(colour.x);
-            self.green[at as usize] = channel(colour.y);
-            self.blue[at as usize] = channel(colour.z);
+            self.red[at as usize] = channel(colour.x) as u8;
+            self.green[at as usize] = channel(colour.y) as u8;
+            self.blue[at as usize] = channel(colour.z) as u8;
             Ok(())
         }
         pub fn luminance(&self, column: u32, row: u32) -> u32 {
-            let _ = column;
-            let _ = row;
-            todo!()
+            let at = self.offset(column, row);
+            (self.red[at as usize] as u32 * 3 + self.green[at as usize] as u32 * 6 + self.blue[at as usize] as u32) / 10
         }
     }
 

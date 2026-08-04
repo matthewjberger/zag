@@ -92,6 +92,8 @@ pub struct Node {
     pub otherwise: Option<u32>,
     /// Whether a local was declared with `var` rather than `const`.
     pub mutable: bool,
+    /// The type a local was declared with, where the Zig wrote one.
+    pub declared: String,
     pub operands: Vec<u32>,
     /// One entry per switch arm: the Zig pattern, the name it binds, and the
     /// node its body is. The pattern is text because what a bare `.red` means
@@ -264,8 +266,10 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     // does not have to be written last.
                     text: value(line, "text")
                         .or_else(|| value(line, "operator"))
+                        .or_else(|| value(line, "name"))
                         .unwrap_or("")
                         .to_string(),
+                    declared: value(line, "type").unwrap_or("-").to_string(),
                     line: number(line, "line"),
                     left: optional(line, "left"),
                     right: optional(line, "right"),

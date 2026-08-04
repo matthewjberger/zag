@@ -30,7 +30,7 @@ pub mod main {
                 1
             } else {
                 0
-            };
+            } as u8;
         }
         pub fn get(&self, column: u32, row: u32) -> u8 {
             self.cells[self.index(column, row) as usize]
@@ -44,7 +44,11 @@ pub mod main {
             todo!()
         }
         pub fn population(&self) -> u32 {
-            todo!()
+            let mut alive: u32 = 0;
+            for cell in self.cells.iter().copied() {
+                alive += cell as u32;
+            }
+            alive
         }
     }
 

@@ -32,6 +32,22 @@ const ALLOCATING: [&str; 6] = [
     "realloc",
 ];
 const FREEING: [&str; 2] = ["free", "destroy"];
+/// Methods that give back the number they were called on, which is what a Zig
+/// builtin over two numbers becomes.
+const ARITHMETIC_METHODS: [&str; 12] = [
+    "min",
+    "max",
+    "abs",
+    "sqrt",
+    "floor",
+    "ceil",
+    "round",
+    "trunc",
+    "wrapping_add",
+    "wrapping_sub",
+    "saturating_add",
+    "saturating_sub",
+];
 /// Calls that change the length of an allocation already made. A field one of
 /// these reaches is owned with a length that moves, which Rust spells as a
 /// vector rather than a boxed slice.
@@ -350,13 +366,19 @@ fn allocating_call(text: &str) -> Option<&str> {
     None
 }
 
+/// A value the port can write out as it stands. Rust spells `true`, `false` and
+/// a negative number the same way Zig does, so all three carry across whole.
 fn is_literal(text: &str) -> bool {
     text == "null"
+        || text == "true"
+        || text == "false"
         || text.starts_with('"')
         || text.starts_with("&.{")
         || text.starts_with(".{")
         || text.starts_with("0x")
         || text
+            .strip_prefix('-')
+            .unwrap_or(text)
             .chars()
             .next()
             .is_some_and(|byte| byte.is_ascii_digit())
@@ -1072,6 +1094,21 @@ fn declare_body(
             locals.insert(name, kind);
         }
     }
+    // Names the body binds are seeded before anything is translated, because a
+    // node arrives before the one that binds it: a loop's capture is written on
+    // the loop and read inside its body, which the reader reaches first.
+    for node in &function.nodes {
+        if matches!(node.kind.as_str(), "let" | "for") && !node.text.is_empty() {
+            locals.entry(node.text.clone()).or_insert(TypeId(NO_INDEX));
+        }
+        for arm in &node.arms {
+            if arm.capture != "-" && !arm.capture.is_empty() {
+                locals
+                    .entry(arm.capture.clone())
+                    .or_insert(TypeId(NO_INDEX));
+            }
+        }
+    }
     let mut built: Vec<(u32, ExpressionId)> = Vec::new();
     for node in &function.nodes {
         let owner = scrutinee_container(
@@ -1361,6 +1398,84 @@ fn returned_struct(
     look_up(&built.structs, scope, &text)
 }
 
+/// The narrower of two integers, written as the wider. Zig does this by peer
+/// resolution and Rust does not do it at all.
+fn widen_integers(
+    tables: &mut Tables,
+    left: ExpressionId,
+    right: ExpressionId,
+    line: u32,
+) -> (ExpressionId, ExpressionId) {
+    let (Some(wide), Some(narrow)) = (integer_named(tables, left), integer_named(tables, right))
+    else {
+        return (left, right);
+    };
+    if wide == narrow {
+        return (left, right);
+    }
+    let widen = |tables: &mut Tables, value: ExpressionId, name: &str| {
+        let spelled = push_string(&mut tables.strings, name.as_bytes());
+        let cast = push_body_expression(tables, ExpressionKind::Cast, spelled, line, &[value]);
+        // A cast is the type it casts to, which is what lets one chain into
+        // the arithmetic around it.
+        if let Some(kind) = scalar_type(tables, name)
+            && let Some(slot) = tables.expressions.result.get_mut(cast.0 as usize)
+        {
+            *slot = kind;
+        }
+        cast
+    };
+    match integer_width(&wide) >= integer_width(&narrow) {
+        true => (left, widen(tables, right, &wide)),
+        false => (widen(tables, left, &narrow), right),
+    }
+}
+
+fn integer_width(name: &str) -> u32 {
+    name[1..].parse().unwrap_or(0)
+}
+
+/// What a sequence yields, one element at a time.
+fn element_of(tables: &Tables, sequence: ExpressionId) -> Option<TypeId> {
+    let kind = tables
+        .expressions
+        .result
+        .get(sequence.0 as usize)
+        .copied()
+        .filter(|kind| kind.0 != NO_INDEX)?;
+    tables
+        .types
+        .element
+        .get(kind.0 as usize)
+        .copied()
+        .filter(|element| element.0 != NO_INDEX)
+}
+
+/// The Rust integer an expression is, where it is one. A cast to the same
+/// integer is a no-op, which is what makes writing one always safe.
+fn integer_named(tables: &Tables, expression: ExpressionId) -> Option<String> {
+    let kind = tables
+        .expressions
+        .result
+        .get(expression.0 as usize)
+        .copied()
+        .filter(|kind| kind.0 != NO_INDEX)?;
+    let index = kind.0 as usize;
+    if tables.types.kind.get(index) != Some(&zag_facts::tables::TypeKind::Integer) {
+        return None;
+    }
+    let signed = tables
+        .types
+        .flags
+        .get(index)
+        .is_some_and(|flags| flags & zag_facts::tables::TYPE_FLAG_SIGNED != 0);
+    let width = tables.types.bit_width.get(index).copied()?;
+    let width = [8u32, 16, 32, 64, 128]
+        .into_iter()
+        .find(|at| *at >= width)?;
+    Some(format!("{}{width}", if signed { 'i' } else { 'u' }))
+}
+
 /// Whether the expression is itself something that can fail, which is what
 /// tells a value on the way out from an error union already on its way out.
 fn returns_a_failure(tables: &Tables, built: &Built, expression: ExpressionId) -> bool {
@@ -1572,12 +1687,28 @@ fn translate_node(
             // A name the body already bound carries its type forward, which is
             // what lets a literal beside it be spelled as the right kind of
             // number.
-            if let Some(kind) = locals.get(&node.text).copied()
-                && let Some(slot) = tables.expressions.result.get_mut(named.0 as usize)
-            {
-                *slot = kind;
+            if let Some(kind) = locals.get(&node.text).copied() {
+                if kind.0 != NO_INDEX
+                    && let Some(slot) = tables.expressions.result.get_mut(named.0 as usize)
+                {
+                    *slot = kind;
+                }
+                return named;
             }
-            named
+            // Anything else is a name from outside the body: an import, a file
+            // level constant, something the port does not write. `true` and
+            // `false` are Zig's spelling of themselves and carry across.
+            // A type standing where a value goes is an argument to a builtin,
+            // which reads it as the type it is rather than as something to
+            // evaluate.
+            if matches!(node.text.as_str(), "true" | "false")
+                || node.text.contains("::")
+                || scalar_type(tables, &node.text).is_some()
+                || look_up(&built_names.structs, scope, &node.text).is_some()
+            {
+                return named;
+            }
+            unsupported(tables)
         }
         "literal" => {
             let text = spelled(tables);
@@ -1662,6 +1793,25 @@ fn translate_node(
                         .into_owned()
                     })
                     .unwrap_or_default();
+                // `opcode.Fault` names a container in another module, and
+                // `Error.ZeroSized` names one in this. Both are paths rather
+                // than field reads, and the import is what tells them apart
+                // from a value with a field on it.
+                let through_import = scope.imports.iter().any(|(alias, _)| *alias == base);
+                if through_import
+                    && tables.expressions.kind.get(left.0 as usize)
+                        == Some(&ExpressionKind::Identifier)
+                {
+                    let path = format!("{base}::{}", node.text);
+                    let named = push_string(&mut tables.strings, path.as_bytes());
+                    return push_body_expression(
+                        tables,
+                        ExpressionKind::Identifier,
+                        named,
+                        node.line,
+                        &[],
+                    );
+                }
                 if tables.expressions.kind.get(left.0 as usize) == Some(&ExpressionKind::Identifier)
                     && !base.is_empty()
                     && look_up(&built_names.structs, scope, &base).is_some()
@@ -1691,9 +1841,13 @@ fn translate_node(
                             ) == node.text.as_bytes()
                         })
                     && let Some(declared) = tables.fields.field_type.get(row).copied()
-                    && let Some(slot) = tables.expressions.result.get_mut(read.0 as usize)
                 {
-                    *slot = declared;
+                    if let Some(slot) = tables.expressions.result.get_mut(read.0 as usize) {
+                        *slot = declared;
+                    }
+                    if let Some(slot) = tables.expressions.field.get_mut(read.0 as usize) {
+                        *slot = FieldId(row as u32);
+                    }
                 }
                 read
             }
@@ -1706,6 +1860,9 @@ fn translate_node(
                 // integer unless the side that carries a type says otherwise.
                 widen_beside(tables, left, right);
                 widen_beside(tables, right, left);
+                // Zig resolves two integer widths to the wider one and Rust
+                // refuses to, so the narrower side is written as the wider.
+                let (left, right) = widen_integers(tables, left, right, node.line);
                 let text = spelled(tables);
                 let combined = push_body_expression(
                     tables,
@@ -1739,13 +1896,23 @@ fn translate_node(
             None => unsupported(tables),
         },
         "index" => match (left, right) {
-            (Some(left), Some(right)) => push_body_expression(
-                tables,
-                ExpressionKind::Index,
-                StringId(NO_INDEX),
-                node.line,
-                &[left, right],
-            ),
+            (Some(left), Some(right)) => {
+                let read = push_body_expression(
+                    tables,
+                    ExpressionKind::Index,
+                    StringId(NO_INDEX),
+                    node.line,
+                    &[left, right],
+                );
+                // Reading one out of a sequence gives what the sequence holds,
+                // which is what tells an integer beside it how wide it is.
+                if let Some(kind) = element_of(tables, left)
+                    && let Some(slot) = tables.expressions.result.get_mut(read.0 as usize)
+                {
+                    *slot = kind;
+                }
+                read
+            }
             _ => unsupported(tables),
         },
         "group" => match left {
@@ -1783,7 +1950,21 @@ fn translate_node(
                 // The receiver's type says which struct the method belongs to,
                 // so what it gives back is known without resolving the call by
                 // name. That is what carries a type into whatever holds it.
-                if let Some(kind) = method_result(tables, built_names, receiver, &node.text)
+                // A method on a number gives back the same number, which is what
+                // keeps the port from casting a `u32` to `u32`.
+                let carried =
+                    method_result(tables, built_names, receiver, &node.text).or_else(|| {
+                        ARITHMETIC_METHODS.contains(&node.text.as_str()).then(|| {
+                            tables
+                                .expressions
+                                .result
+                                .get(receiver.0 as usize)
+                                .copied()
+                                .unwrap_or(TypeId(NO_INDEX))
+                        })
+                    });
+                if let Some(kind) = carried
+                    && kind.0 != NO_INDEX
                     && let Some(slot) = tables.expressions.result.get_mut(called.0 as usize)
                 {
                     *slot = kind;
@@ -1797,7 +1978,26 @@ fn translate_node(
             // receiver and the rest stay arguments.
             Some((method, arity)) if operands.len() == arity && !operands.is_empty() => {
                 let text = push_string(&mut tables.strings, method.as_bytes());
-                push_body_expression(tables, ExpressionKind::Method, text, node.line, &operands)
+                let called = push_body_expression(
+                    tables,
+                    ExpressionKind::Method,
+                    text,
+                    node.line,
+                    &operands,
+                );
+                // `@max(a, b)` gives back what `a` is, which is what keeps the
+                // port from casting a number to the type it already has.
+                if let Some(kind) = tables
+                    .expressions
+                    .result
+                    .get(operands[0].0 as usize)
+                    .copied()
+                    .filter(|kind| kind.0 != NO_INDEX)
+                    && let Some(slot) = tables.expressions.result.get_mut(called.0 as usize)
+                {
+                    *slot = kind;
+                }
+                called
             }
             _ if node.text == "@intCast" && operands.len() == 1 => {
                 // Rust infers what it is converting to, so no type has to be
@@ -1846,9 +2046,25 @@ fn translate_node(
                     if let Some(slot) = tables.expressions.text.get_mut(value.0 as usize) {
                         *slot = named;
                     }
+                    let text = zag_facts::tables::string_bytes(&tables.strings, named).to_vec();
+                    let text = String::from_utf8_lossy(&text).into_owned();
+                    if let Some(kind) = scalar_type(tables, &text)
+                        && let Some(slot) = tables.expressions.result.get_mut(value.0 as usize)
+                    {
+                        *slot = kind;
+                    }
                     return value;
                 }
-                push_body_expression(tables, ExpressionKind::Cast, named, node.line, &[value])
+                let cast =
+                    push_body_expression(tables, ExpressionKind::Cast, named, node.line, &[value]);
+                let text = zag_facts::tables::string_bytes(&tables.strings, named).to_vec();
+                let text = String::from_utf8_lossy(&text).into_owned();
+                if let Some(kind) = scalar_type(tables, &text)
+                    && let Some(slot) = tables.expressions.result.get_mut(cast.0 as usize)
+                {
+                    *slot = kind;
+                }
+                cast
             }
             _ if matches!(
                 node.text.as_str(),
@@ -1935,8 +2151,46 @@ fn translate_node(
             }
             _ => unsupported(tables),
         },
+        // Zig walks a slice by value and Rust moves what it walks, so the port
+        // borrows instead. A scalar element is copied back out, which is what
+        // the Zig did, and anything larger is read through the reference.
         "for" => match (left, right) {
             (Some(sequence), Some(body)) => {
+                let walking = push_string(&mut tables.strings, b"iter");
+                let borrowed = push_body_expression(
+                    tables,
+                    ExpressionKind::Method,
+                    walking,
+                    node.line,
+                    &[sequence],
+                );
+                let element = element_of(tables, sequence);
+                let sequence = match element.map(|kind| tables.types.kind.get(kind.0 as usize)) {
+                    Some(Some(
+                        zag_facts::tables::TypeKind::Integer
+                        | zag_facts::tables::TypeKind::Float
+                        | zag_facts::tables::TypeKind::Bool,
+                    )) => {
+                        let copied = push_string(&mut tables.strings, b"copied");
+                        let taken = push_body_expression(
+                            tables,
+                            ExpressionKind::Method,
+                            copied,
+                            node.line,
+                            &[borrowed],
+                        );
+                        if let Some(kind) = element
+                            && let Some(slot) = tables.expressions.result.get_mut(taken.0 as usize)
+                        {
+                            *slot = kind;
+                        }
+                        taken
+                    }
+                    _ => borrowed,
+                };
+                if let Some(kind) = element {
+                    locals.insert(node.text.clone(), kind);
+                }
                 let text = spelled(tables);
                 push_body_expression(
                     tables,
@@ -2077,9 +2331,21 @@ fn translate_node(
         "let" => match left {
             Some(left) => {
                 let text = spelled(tables);
-                if let Some(kind) = tables.expressions.result.get(left.0 as usize).copied()
-                    && kind.0 != NO_INDEX
-                {
+                // What the Zig declared beats what the value happens to be,
+                // because that is what the program said and Rust infers from
+                // whatever is assigned next when neither is written down.
+                // A scalar is what a local annotation almost always is, and it
+                // is the one the value cannot supply: `var alive: u32 = 0`
+                // otherwise takes its width from whatever is added to it next.
+                let annotated = scalar_type(tables, node.declared.trim());
+                if let Some(kind) = annotated.or_else(|| {
+                    tables
+                        .expressions
+                        .result
+                        .get(left.0 as usize)
+                        .copied()
+                        .filter(|kind| kind.0 != NO_INDEX)
+                }) {
                     locals.insert(node.text.clone(), kind);
                 }
                 let declared =
@@ -2087,18 +2353,46 @@ fn translate_node(
                 if let Some(slot) = tables.expressions.parameter.get_mut(declared.0 as usize) {
                     *slot = u32::from(node.mutable);
                 }
+                // The annotation rides on the binding, because Rust needs it
+                // written where Zig wrote it.
+                if let Some(kind) = annotated
+                    && let Some(slot) = tables.expressions.result.get_mut(declared.0 as usize)
+                {
+                    *slot = kind;
+                }
                 declared
             }
             None => unsupported(tables),
         },
+        // `x += 1` is the same statement in both languages, so the operator
+        // rides across rather than being unfolded into a read and a write.
         "assign" => match (left, right) {
-            (Some(left), Some(right)) => push_body_expression(
-                tables,
-                ExpressionKind::Assign,
-                StringId(NO_INDEX),
-                node.line,
-                &[left, right],
-            ),
+            (Some(left), Some(right)) => {
+                // Zig widens a narrower integer on its way into a wider one and
+                // Rust does not, so where the left says which integer it is,
+                // the right is written as that one.
+                let right = match integer_named(tables, left) {
+                    Some(name) if integer_named(tables, right) != Some(name.clone()) => {
+                        let spelled = push_string(&mut tables.strings, name.as_bytes());
+                        push_body_expression(
+                            tables,
+                            ExpressionKind::Cast,
+                            spelled,
+                            node.line,
+                            &[right],
+                        )
+                    }
+                    _ => right,
+                };
+                let text = spelled(tables);
+                push_body_expression(
+                    tables,
+                    ExpressionKind::Assign,
+                    text,
+                    node.line,
+                    &[left, right],
+                )
+            }
             _ => unsupported(tables),
         },
         "expression" => match left {

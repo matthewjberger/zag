@@ -535,8 +535,16 @@ fn render_expression(
                 out.extend_from_slice(b"mut ");
             }
             out.extend_from_slice(text_of(ast, node));
+            let children = node_children(ast, node);
+            if children.is_empty() {
+                return Err(RenderError::MissingChild { node });
+            }
+            if children.len() > 1 {
+                out.extend_from_slice(b": ");
+                render_type(out, ast, ast.children[children.start + 1])?;
+            }
             out.extend_from_slice(b" = ");
-            render_expression(out, ast, only_child(ast, node)?, depth)
+            render_expression(out, ast, ast.children[children.start], depth)
         }
         NodeKind::ExpressionAssign => {
             let children = node_children(ast, node);
@@ -544,7 +552,10 @@ fn render_expression(
                 return Err(RenderError::MissingChild { node });
             }
             render_expression(out, ast, ast.children[children.start], depth)?;
-            out.extend_from_slice(b" = ");
+            let operator = text_of(ast, node);
+            out.push(b' ');
+            out.extend_from_slice(if operator.is_empty() { b"=" } else { operator });
+            out.push(b' ');
             render_expression(out, ast, ast.children[children.start + 1], depth)
         }
         NodeKind::ExpressionBranch => {

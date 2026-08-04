@@ -54,6 +54,12 @@ fn largest_body(tables: &mut Tables) -> ExpressionId {
     if let Some(slot) = tables.expressions.parameter.get_mut(declared.0 as usize) {
         *slot = 1;
     }
+    // `var highest: u32` writes the width down, and Rust needs it: without one
+    // the binding takes its type from whatever is assigned to it next.
+    let word = push_integer_type(tables, 32, false);
+    if let Some(slot) = tables.expressions.result.get_mut(declared.0 as usize) {
+        *slot = word;
+    }
 
     let item = name(tables, b"item", 22);
     let amount = push_string(&mut tables.strings, b"amount");
@@ -82,7 +88,11 @@ fn largest_body(tables: &mut Tables) -> ExpressionId {
         21,
         &[stored],
     );
+    // Zig walks a slice by value and Rust moves what it walks, so the loop
+    // borrows and the elements are read through the reference.
     let sequence = name(tables, b"entries", 21);
+    let walking = push_string(&mut tables.strings, b"iter");
+    let sequence = push_body_expression(tables, ExpressionKind::Method, walking, 21, &[sequence]);
     let binding = push_string(&mut tables.strings, b"item");
     let walked = push_body_expression(
         tables,

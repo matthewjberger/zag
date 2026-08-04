@@ -118,6 +118,25 @@ fn isStructInit(tag: Ast.Node.Tag) bool {
     };
 }
 
+/// Zig writes a compound assignment the way Rust does, so the operator carries
+/// across whole rather than being unfolded into a read and a write.
+fn assignOperator(tag: Ast.Node.Tag) ?[]const u8 {
+    return switch (tag) {
+        .assign => "=",
+        .assign_add => "+=",
+        .assign_sub => "-=",
+        .assign_mul => "*=",
+        .assign_div => "/=",
+        .assign_mod => "%=",
+        .assign_bit_and => "&=",
+        .assign_bit_or => "|=",
+        .assign_bit_xor => "^=",
+        .assign_shl => "<<=",
+        .assign_shr => ">>=",
+        else => null,
+    };
+}
+
 /// The Rust spelling of a binary operator, or nothing where Rust has no
 /// operator that means the same thing. Zig's `and` and `or` are Rust's `&&`
 /// and `||`, and the arithmetic ones carry across unchanged.
@@ -533,24 +552,32 @@ fn emitStatement(walker: Walker, node: Ast.Node.Index) anyerror!void {
             // Zig says `var` where Rust says `let mut`, and a `const` that the
             // port made mutable would be a different program.
             const mutable = std.mem.eql(u8, tree.tokenSlice(declaration.ast.mut_token), "var");
-            std.debug.print("statement {s} {d} kind=let line={d} left={d} mutable={d} text={s}\n", .{
+            // The declared type goes last, because Zig may write one with a
+            // space in it, and Rust needs it: a `var x: u32 = 0` whose type is
+            // dropped takes its width from whatever is assigned to it next.
+            const declared = if (declaration.ast.type_node.unwrap()) |kind|
+                try collapse(walker.arena, tree.getNodeSource(kind))
+            else
+                "-";
+            std.debug.print("statement {s} {d} kind=let line={d} left={d} mutable={d} name={s} type={s}\n", .{
                 walker.owner,
                 raw,
                 line,
                 @intFromEnum(expression),
                 @intFromBool(mutable),
                 tree.tokenSlice(declaration.ast.mut_token + 1),
+                declared,
             });
             return;
         }
     }
 
-    if (tree.nodeTag(node) == .assign) {
+    if (assignOperator(tree.nodeTag(node))) |operator| {
         const sides = tree.nodeData(node).node_and_node;
         try emitExpression(walker, sides[0]);
         try emitExpression(walker, sides[1]);
-        std.debug.print("statement {s} {d} kind=assign line={d} left={d} right={d}\n", .{
-            walker.owner, raw, line, @intFromEnum(sides[0]), @intFromEnum(sides[1]),
+        std.debug.print("statement {s} {d} kind=assign line={d} left={d} right={d} operator={s}\n", .{
+            walker.owner, raw, line, @intFromEnum(sides[0]), @intFromEnum(sides[1]), operator,
         });
         return;
     }

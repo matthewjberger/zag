@@ -201,6 +201,11 @@ fn lower_expression(
                 &lowered,
             )
         }
+        // The type is on the row, because Zig writes it in the `@as` around the
+        // conversion and Rust writes it after the value.
+        ExpressionKind::Cast => {
+            push_node(ast, NodeKind::ExpressionAs, name, absent(), 0, 0, &lowered)
+        }
         ExpressionKind::Wrap => push_node(
             ast,
             NodeKind::ExpressionCall,
@@ -291,30 +296,42 @@ fn lower_expression(
             &lowered,
         ),
         ExpressionKind::Let => {
-            // Unset is not mutable. The column means whatever the kind says it
-            // means, and for a local that is one for `var` and nothing else.
-            let mutable = u32::from(
-                tables
-                    .expressions
-                    .parameter
-                    .get(expression.0 as usize)
-                    .copied()
-                    == Some(1),
-            );
+            let mutable = tables
+                .expressions
+                .parameter
+                .get(expression.0 as usize)
+                .copied()
+                == Some(1);
+            // A Zig local may carry the type Rust would otherwise take from
+            // whatever is assigned to it next, so the annotation comes across.
+            let mut children = lowered.clone();
+            if let Some(kind) = tables
+                .expressions
+                .result
+                .get(expression.0 as usize)
+                .copied()
+                .filter(|kind| kind.0 != NO_INDEX)
+            {
+                children.push(crate::lower::lower_type_body(
+                    ast, tables, lowering, kind, 0,
+                ));
+            }
             push_node(
                 ast,
                 NodeKind::ExpressionLet,
                 name,
                 absent(),
                 0,
-                mutable,
-                &lowered,
+                u32::from(mutable),
+                &children,
             )
         }
+        // `+=` and its neighbours mean the same in both languages, so the
+        // operator the row carries is the one written out.
         ExpressionKind::Assign => push_node(
             ast,
             NodeKind::ExpressionAssign,
-            absent(),
+            name,
             absent(),
             0,
             0,
@@ -599,6 +616,39 @@ pub fn reads_the_allocator(
         .any(|child| reads_the_allocator(tables, function, child, depth + 1))
 }
 
+/// Whether the body moves an owned field out of the reference it was reached
+/// through. Zig copies a slice out of a struct; Rust moves a `Box` or a `Vec`,
+/// which is a swap the port cannot invent.
+pub fn moves_an_owned_field(
+    tables: &Tables,
+    ownership: &Ownership,
+    expression: ExpressionId,
+    depth: u32,
+) -> bool {
+    if depth >= MAXIMUM_DEPTH {
+        return false;
+    }
+    let taken = matches!(
+        kind_of(tables, expression),
+        Some(ExpressionKind::Let) | Some(ExpressionKind::Assign)
+    );
+    if taken
+        && let Some(value) = children_of(tables, expression).last().copied()
+        && kind_of(tables, value) == Some(ExpressionKind::Field)
+        && let Some(field) = tables.expressions.field.get(value.0 as usize).copied()
+        && field.0 != NO_INDEX
+        && matches!(
+            ownership.class.get(field.0 as usize),
+            Some(OwnershipClass::Owned) | Some(OwnershipClass::Grown)
+        )
+    {
+        return true;
+    }
+    children_of(tables, expression)
+        .into_iter()
+        .any(|child| moves_an_owned_field(tables, ownership, child, depth + 1))
+}
+
 pub fn lower_body(
     ast: &mut Ast,
     tables: &Tables,
@@ -618,7 +668,10 @@ pub fn lower_body(
     if kind_of(tables, body) != Some(ExpressionKind::Block) {
         return None;
     }
-    if !is_spellable(tables, body, 0) || reads_the_allocator(tables, function, body, 0) {
+    if !is_spellable(tables, body, 0)
+        || reads_the_allocator(tables, function, body, 0)
+        || moves_an_owned_field(tables, ownership, body, 0)
+    {
         return None;
     }
     let children = children_of(tables, body);

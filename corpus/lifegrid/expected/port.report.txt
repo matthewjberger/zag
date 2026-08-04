@@ -42,6 +42,6 @@ functions: 11
   Grid.get: ported, signature and body (main.zig:44)
   Grid.neighbours: ported, signature only, the body is still to write (main.zig:48)
   Grid.step: ported, signature only, the body is still to write (main.zig:75)
-  Grid.population: ported, signature only, the body is still to write (main.zig:95)
+  Grid.population: ported, signature and body (main.zig:95)
   glider: ported, signature only, the body is still to write (main.zig:104)
   main: ported, signature only, the body is still to write (main.zig:113)

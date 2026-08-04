@@ -221,19 +221,13 @@ pub fn disposition(
     {
         return Disposition::NotPorted(refusal);
     }
-    match tables
-        .functions
-        .body
-        .get(function.0 as usize)
-        .copied()
-        .filter(|body| body.0 != NO_INDEX)
-        .is_some_and(|body| {
-            crate::body::signature_is_settled(tables, ownership, function)
-                && crate::body::is_spellable(tables, body, 0)
-                && !crate::body::reads_the_allocator(tables, function, body, 0)
-        }) {
-        true => Disposition::Ported,
-        false => Disposition::Signature,
+    // Asked by writing it. The port and the report disagreeing about whether a
+    // body came across is worse than either answer, and every refusal added to
+    // the writer has drifted from a copy of the question at least once.
+    let mut scratch = zag_render::ast::empty_ast();
+    match crate::body::lower_body(&mut scratch, tables, ownership, lowering, function) {
+        Some(_) => Disposition::Ported,
+        None => Disposition::Signature,
     }
 }
 
