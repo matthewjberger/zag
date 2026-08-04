@@ -70,10 +70,15 @@ fn parse(text: &str) -> Extraction {
         };
         match kind {
             "function" => {
-                extraction.functions.insert(subject.to_string());
+                extraction
+                    .functions
+                    .insert(last_segment(subject).to_string());
             }
             "parameter" => {
-                let owner = subject.split('.').next().unwrap_or(subject);
+                // `Owner.name.index`, so the function is what remains once the
+                // parameter's own index comes off, and the tables name it
+                // without the container it was declared in.
+                let owner = last_segment(subject.rsplit_once('.').map_or(subject, |(key, _)| key));
                 if let Some(name) = value_of(line, "name") {
                     extraction
                         .parameters
@@ -84,7 +89,7 @@ fn parse(text: &str) -> Extraction {
                 if let Some(callee) = value_of(line, "callee") {
                     extraction
                         .calls
-                        .insert((subject.to_string(), callee.to_string()));
+                        .insert((last_segment(subject).to_string(), callee.to_string()));
                 }
             }
             // `argument <fn>|<callee>|<index> text=<x>.<field>`. Only the
@@ -103,7 +108,7 @@ fn parse(text: &str) -> Extraction {
                     && let Some((holder, field)) = text.trim().rsplit_once('.')
                 {
                     extraction.freed.push((
-                        owner.to_string(),
+                        last_segment(owner).to_string(),
                         holder.to_string(),
                         field.to_string(),
                     ));
@@ -114,7 +119,7 @@ fn parse(text: &str) -> Extraction {
                     (value_of(line, "field"), value_of(line, "value"))
                 {
                     extraction.initialisers.push((
-                        subject.to_string(),
+                        last_segment(subject).to_string(),
                         field.to_string(),
                         value.to_string(),
                     ));

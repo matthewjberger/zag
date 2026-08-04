@@ -36,6 +36,13 @@ enum with an explicit tag type, a tagged union, a fixed array field, a named
 error set, a `switch` over every variant, and methods that take the receiver
 both ways.
 
+`raytrace` renders a scene of spheres and a plane to an ASCII image over five
+modules. It is the largest of these and the one closest to a real program: a
+vector type whose methods are pure arithmetic over fields, a tagged union of
+shapes dispatched by `switch`, optional hit records, an `extern struct` header,
+three owned channel buffers freed by one `deinit`, an arena the shapes live in
+and nothing frees, recursion through mirror bounces, and floats throughout.
+
 `lifegrid` runs Conway's life over two allocated buffers that trade places
 every generation. It covers two owned fields freed by one `deinit`, an
 allocation with no source to copy from, signed and unsigned index arithmetic
@@ -65,15 +72,27 @@ These programs are what found the following, none of it visible from
   is refused instead.
 - Zig indexes with any integer and Rust indexes with `usize`, so the cast is
   now part of the translation.
+- Three structs in one file each declaring a method called `hit` became one
+  function with nine parameters. Every row the parser writes about a function
+  names it, and the reader matched on the bare name, so all three piled onto
+  whichever was read first. The name a row carries is qualified with the
+  container now, which Zig guarantees is unique per file.
+- Floats were not a type kind at all. `f32` matched no scalar rule, fell
+  through to an opaque type named after itself, and came out qualified with
+  whichever module happened to declare one first. The types table in the
+  porting guide had claimed `f32` and `f64` worked since before they did.
 - A `*T` parameter that was not the receiver came across as `&T` while the
   receiver became `&mut self`, so the same pointer was read two ways depending
   on where it sat in the signature. It takes `&mut` now, which leaves a body
   somebody can actually write.
 
-Two shapes are refused rather than ported, because a body expression carries no
-resolved type and both need one. `null` is `None` only once something says what
+Three shapes are refused rather than ported, because a body expression carries
+no resolved type and each needs one. `null` is `None` only once something says what
 it is null of, and everything on the way out of the function would have to be
 wrapped to match. `.len` is a length on a slice and a field access on anything
-else, and Rust spells the first as a call. Both are cases the report names, and
-both are the kind of gap that closes when the frontend can ask the compiler
-what a body expression is rather than reading its spelling.
+else, and Rust spells the first as a call. A bare numeric literal handed to a
+call is a third: Zig coerces it to whatever the parameter is, so `splat(0)`
+passes a float, and Rust infers an integer and stops. All three are cases the
+report names, and all three are the kind of gap that closes when the frontend
+can ask the compiler what a body expression is rather than reading its
+spelling.

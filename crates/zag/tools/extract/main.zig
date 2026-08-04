@@ -556,11 +556,21 @@ pub fn main() !void {
         if (tree.nodeTag(node) != .fn_decl) continue;
         const proto = tree.fullFnProto(&buffer, node) orelse continue;
         const name_token = proto.name_token orelse continue;
+        const holder = innermost(containers.items, tree.firstToken(node));
+        // Qualified with the container it was declared in, because a file may
+        // hold several structs with a method of the same name and every row
+        // below names the function it belongs to. Zig forbids two declarations
+        // of one name in one container, so this is unique per file.
+        const bare = tree.tokenSlice(name_token);
+        const named = if (holder) |index|
+            try std.fmt.allocPrint(arena, "{s}.{s}", .{ containers.items[index].name, bare })
+        else
+            bare;
         try functions.append(arena, .{
-            .name = tree.tokenSlice(name_token),
+            .name = named,
             .first = tree.firstToken(node),
             .last = tree.lastToken(node),
-            .owner = innermost(containers.items, tree.firstToken(node)),
+            .owner = holder,
             .node = node,
         });
     }

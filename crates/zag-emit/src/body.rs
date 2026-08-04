@@ -58,6 +58,20 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
     if text == b"null" {
         return false;
     }
+    // Zig coerces a bare numeric literal to whatever the parameter is, so
+    // `splat(0)` passes a float. Rust infers an integer and stops. Which one
+    // was meant is a type the body does not carry, so a call handed one is
+    // left to a person rather than written as an integer and hoped over.
+    if matches!(kind, ExpressionKind::Call | ExpressionKind::Method)
+        && children_of(tables, expression).into_iter().any(|child| {
+            kind_of(tables, child) == Some(ExpressionKind::Literal)
+                && text_of(tables, child)
+                    .iter()
+                    .all(|byte| byte.is_ascii_digit())
+        })
+    {
+        return false;
+    }
     if !matches!(
         kind,
         ExpressionKind::Identifier

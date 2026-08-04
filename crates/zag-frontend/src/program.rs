@@ -21,6 +21,11 @@ pub struct Member {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Function {
+    /// What every row below names it by: the container it was declared in and
+    /// its own name. A file may hold several structs with a method of the same
+    /// name, and matching on the bare name piles all of their parameters onto
+    /// whichever one was read first.
+    pub key: String,
     pub name: String,
     pub owner: String,
     pub returns: String,
@@ -126,11 +131,18 @@ fn split_once_at(subject: &str, separator: char) -> (&str, &str) {
     subject.split_once(separator).unwrap_or((subject, ""))
 }
 
-fn function_mut<'a>(program: &'a mut Program, name: &str) -> Option<&'a mut Function> {
+/// A function-scoped subject is the function's key with one more part on the
+/// end, and the key itself contains a dot when the function belongs to a
+/// container, so the split is from the right.
+fn split_last_at(subject: &str, separator: char) -> (&str, &str) {
+    subject.rsplit_once(separator).unwrap_or((subject, ""))
+}
+
+fn function_mut<'a>(program: &'a mut Program, key: &str) -> Option<&'a mut Function> {
     program
         .functions
         .iter_mut()
-        .find(|function| function.name == name)
+        .find(|function| function.key == key)
 }
 
 fn container_mut<'a>(program: &'a mut Program, name: &str) -> Option<&'a mut Container> {
@@ -163,14 +175,18 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                 }
             }
             "function" => program.functions.push(Function {
-                name: subject.to_string(),
+                key: subject.to_string(),
+                name: match subject.rsplit_once('.') {
+                    Some((_, name)) => name.to_string(),
+                    None => subject.to_string(),
+                },
                 owner: value(line, "owner").unwrap_or("-").to_string(),
                 returns: value(line, "returns").unwrap_or("-").to_string(),
                 line: number(line, "line"),
                 ..Function::default()
             }),
             "parameter" => {
-                let (owner, _) = split_once_at(subject, '.');
+                let (owner, _) = split_last_at(subject, '.');
                 let name = value(line, "name").unwrap_or("-").to_string();
                 let declared = value(line, "type").unwrap_or("-").to_string();
                 if let Some(function) = function_mut(program, owner) {
@@ -207,7 +223,7 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                 }
             }
             "local" => {
-                let (owner, name) = split_once_at(subject, '.');
+                let (owner, name) = split_last_at(subject, '.');
                 let initialiser = value(line, "value").unwrap_or("").to_string();
                 if let Some(function) = function_mut(program, owner) {
                     function.locals.push((name.to_string(), initialiser));

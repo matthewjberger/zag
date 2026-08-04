@@ -6,12 +6,12 @@ use std::collections::BTreeMap;
 use zag_facts::build::{
     declare_artifact, declare_field, declare_function, declare_module, declare_parameter, intern,
     name_root_module, push_allocator_source, push_array_type, push_body_expression, push_call,
-    push_call_argument, push_expression, push_field_assignment_at, push_integer_type,
-    push_memory_operation, push_opaque_type, push_optional_type, push_pointer_type,
-    push_slice_type, push_string, push_struct, push_struct_type, push_unresolved_import,
-    set_expression_line, set_function_body, set_function_line, set_function_module,
-    set_function_signature, set_struct_deinit, set_struct_kind, set_struct_module, set_type_flags,
-    set_type_module,
+    push_call_argument, push_expression, push_field_assignment_at, push_float_type,
+    push_integer_type, push_memory_operation, push_opaque_type, push_optional_type,
+    push_pointer_type, push_slice_type, push_string, push_struct, push_struct_type,
+    push_unresolved_import, set_expression_line, set_function_body, set_function_line,
+    set_function_module, set_function_signature, set_struct_deinit, set_struct_kind,
+    set_struct_module, set_type_flags, set_type_module,
 };
 use zag_facts::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId, NO_INDEX, StringId, StructId,
@@ -163,6 +163,11 @@ fn strip_qualifiers(text: &str) -> (&str, bool) {
 }
 
 fn scalar_type(tables: &mut Tables, text: &str) -> Option<TypeId> {
+    if let Some(width) = text.strip_prefix('f')
+        && let Ok(width) = width.parse::<u32>()
+    {
+        return Some(push_float_type(tables, width));
+    }
     let signed = text.starts_with('i');
     if (signed || text.starts_with('u')) && text.len() > 1 {
         if let Ok(width) = text[1..].parse::<u32>() {

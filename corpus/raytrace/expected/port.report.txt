@@ -1,0 +1,187 @@
+zag ownership report
+target: x86_64-linux
+artifacts: 1
+  executable raytrace: main.zig
+modules: 5
+  geometry.zig
+  image.zig
+  main.zig
+  scene.zig
+  vector.zig
+fields: 33
+
+Material.albedo
+  class: value
+  confidence: high
+
+Material.shininess
+  class: value
+  confidence: high
+
+Material.mirror
+  class: value
+  confidence: high
+
+Hit.distance
+  class: value
+  confidence: high
+
+Hit.point
+  class: value
+  confidence: high
+
+Hit.normal
+  class: value
+  confidence: high
+
+Hit.material
+  class: value
+  confidence: high
+
+Sphere.centre
+  class: value
+  confidence: high
+
+Sphere.radius
+  class: value
+  confidence: high
+
+Sphere.material
+  class: value
+  confidence: high
+
+Plane.height
+  class: value
+  confidence: high
+
+Plane.material
+  class: value
+  confidence: high
+
+Shape.sphere
+  class: value
+  confidence: high
+
+Shape.plane
+  class: value
+  confidence: high
+
+Header.magic
+  class: value
+  confidence: high
+
+Header.width
+  class: value
+  confidence: high
+
+Header.height
+  class: value
+  confidence: high
+
+Header.depth
+  class: value
+  confidence: high
+
+Image.red
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Image.green
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Image.blue
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Image.width
+  class: value
+  confidence: high
+
+Image.height
+  class: value
+  confidence: high
+
+Error.ZeroSized
+  class: value
+  confidence: high
+
+Error.OutOfBounds
+  class: value
+  confidence: high
+
+Scene.shapes
+  class: unknown
+  confidence: low
+  evidence: assigned from an unrecognised source (build)
+
+Scene.light
+  class: value
+  confidence: high
+
+Scene.sky
+  class: value
+  confidence: high
+
+Vector.x
+  class: value
+  confidence: high
+
+Vector.y
+  class: value
+  confidence: high
+
+Vector.z
+  class: value
+  confidence: high
+
+Ray.from
+  class: value
+  confidence: high
+
+Ray.towards
+  class: value
+  confidence: high
+
+functions: 31
+  Sphere.hit: ported, signature only, the body is still to write (geometry.zig:24)
+  Plane.hit: ported, signature only, the body is still to write (geometry.zig:54)
+  Shape.hit: ported, signature only, the body is still to write (geometry.zig:78)
+  Image.init: still to write, the error set it can fail with has no name (image.zig:28)
+    no constructor: red is set from allocator.alloc(u8, area), which the port cannot spell (image.zig:34)
+  Image.deinit: disappears, Drop frees what it freed (image.zig:42)
+  Image.header: ported, signature only, the body is still to write (image.zig:48)
+  Image.offset: ported, signature and body (image.zig:57)
+  Image.write: ported, signature only, the body is still to write (image.zig:61)
+  Image.luminance: ported, signature only, the body is still to write (image.zig:71)
+  channel: ported, signature only, the body is still to write (image.zig:79)
+  trace: ported, signature only, the body is still to write (main.zig:15)
+  cameraRay: ported, signature only, the body is still to write (main.zig:38)
+  render: still to write, the error set it can fail with has no name (main.zig:52)
+  main: still to write, the error set it can fail with has no name (main.zig:63)
+  Scene.nearest: ported, signature only, the body is still to write (scene.zig:12)
+  Scene.shadowed: ported, signature only, the body is still to write (scene.zig:27)
+  build: still to write, the error set it can fail with has no name (scene.zig:39)
+  Vector.add: ported, signature only, the body is still to write (vector.zig:10)
+  Vector.subtract: ported, signature only, the body is still to write (vector.zig:18)
+  Vector.scale: ported, signature only, the body is still to write (vector.zig:26)
+  Vector.multiply: ported, signature only, the body is still to write (vector.zig:34)
+  Vector.dot: ported, signature and body (vector.zig:42)
+  Vector.cross: ported, signature only, the body is still to write (vector.zig:46)
+  Vector.lengthSquared: ported, signature only, the body is still to write (vector.zig:54)
+  Vector.length: ported, signature only, the body is still to write (vector.zig:58)
+  Vector.normalize: ported, signature only, the body is still to write (vector.zig:62)
+  Vector.negate: ported, signature only, the body is still to write (vector.zig:70)
+  splat: ported, signature only, the body is still to write (vector.zig:75)
+  origin: ported, signature only, the body is still to write (vector.zig:79)
+  Ray.at: ported, signature only, the body is still to write (vector.zig:89)
+  reflect: ported, signature only, the body is still to write (vector.zig:94)

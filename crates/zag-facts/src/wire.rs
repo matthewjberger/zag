@@ -95,6 +95,7 @@ fn type_kind_from_raw(value: u32) -> Result<TypeKind, DecodeError> {
         6 => Ok(TypeKind::Opaque),
         7 => Ok(TypeKind::Optional),
         8 => Ok(TypeKind::Array),
+        9 => Ok(TypeKind::Float),
         other => Err(DecodeError::UnknownEnumValue {
             column: "types.kind",
             value: other,

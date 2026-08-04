@@ -177,6 +177,20 @@ pub fn lower_type_body(
                 None => unit_type(ast),
             }
         }
+        // Rust has two floats and Zig has five. `f16` and `f128` are not
+        // stable Rust, and `f80` is not Rust at all, so a width with no
+        // spelling gets none rather than the nearest one.
+        TypeKind::Float => match tables.types.bit_width.get(index).copied().unwrap_or(0) {
+            32 => {
+                let name = push_string(&mut ast.strings, b"f32");
+                push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
+            }
+            64 => {
+                let name = push_string(&mut ast.strings, b"f64");
+                push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])
+            }
+            _ => unit_type(ast),
+        },
         TypeKind::Bool => {
             let name = push_string(&mut ast.strings, b"bool");
             push_node(ast, NodeKind::TypePath, name, absent(), 0, 0, &[])

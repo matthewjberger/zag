@@ -90,6 +90,9 @@ pub enum TypeKind {
     Opaque = 6,
     Optional = 7,
     Array = 8,
+    /// A binary float. `bit_width` says which one, the same way it does for an
+    /// integer, because Zig has widths Rust has no spelling for.
+    Float = 9,
 }
 
 #[repr(u8)]

@@ -113,6 +113,19 @@ pub fn intern(strings: &mut Strings, text: &[u8]) -> StringId {
     push_string(strings, text)
 }
 
+pub fn push_float_type(tables: &mut Tables, bit_width: u32) -> TypeId {
+    let bytes = bit_width.div_ceil(8);
+    push_type_row(
+        tables,
+        TypeRow {
+            size: bytes,
+            alignment: bytes,
+            bit_width,
+            ..type_row(TypeKind::Float)
+        },
+    )
+}
+
 pub fn push_integer_type(tables: &mut Tables, bit_width: u32, signed: bool) -> TypeId {
     let bytes = bit_width.div_ceil(8);
     let flags = if signed {

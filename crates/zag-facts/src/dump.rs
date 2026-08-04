@@ -73,6 +73,7 @@ fn type_kind(kind: TypeKind) -> &'static str {
         TypeKind::Opaque => "opaque",
         TypeKind::Optional => "optional",
         TypeKind::Array => "array",
+        TypeKind::Float => "float",
     }
 }
 

@@ -120,7 +120,7 @@ fn arbitrary_tables() -> impl Strategy<Value = Tables> {
     (
         prop::collection::vec(any::<u8>(), 0..48),
         arbitrary_words(),
-        prop::collection::vec(0u32..7, 0..12),
+        prop::collection::vec(0u32..10, 0..12),
         arbitrary_words(),
         prop::collection::vec(0u32..4, 0..12),
         prop::collection::vec(0u32..3, 0..12),
@@ -170,7 +170,10 @@ fn type_kind_from_index(index: u32) -> TypeKind {
         3 => TypeKind::Slice,
         4 => TypeKind::Pointer,
         5 => TypeKind::Struct,
-        _ => TypeKind::Opaque,
+        6 => TypeKind::Opaque,
+        7 => TypeKind::Optional,
+        8 => TypeKind::Array,
+        _ => TypeKind::Float,
     }
 }
 
