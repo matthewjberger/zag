@@ -90,9 +90,17 @@ Three shapes are refused rather than ported, because a body expression carries
 no resolved type and each needs one. `null` is `None` only once something says what
 it is null of, and everything on the way out of the function would have to be
 wrapped to match. `.len` is a length on a slice and a field access on anything
-else, and Rust spells the first as a call. A bare numeric literal handed to a
-call is a third: Zig coerces it to whatever the parameter is, so `splat(0)`
-passes a float, and Rust infers an integer and stops. All three are cases the
-report names, and all three are the kind of gap that closes when the frontend
-can ask the compiler what a body expression is rather than reading its
-spelling.
+else, and Rust spells the first as a call. Both are cases the report names, and
+both are the kind of gap that closes when the frontend can ask the compiler
+what a body expression is rather than reading its spelling.
+
+A numeric literal handed to a call used to be a third. Zig coerces it to
+whatever the parameter is, so `splat(0)` passes a float where Rust infers an
+integer and stops. The callee resolves, though, so the parameter it lands on
+says which was meant, and the frontend widens the literal there. The same trick
+does not reach a method call, which resolves no callee.
+
+The biggest remaining hole is `.{ ... }` in a body. Every method on the vector
+type returns one, and the parser reports it as text rather than as a literal
+with fields, so the body it sits in is refused whole. The type it should take
+is the enclosing function's return type, which is already known.

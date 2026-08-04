@@ -1118,6 +1118,37 @@ fn translate_call(
     let Some(callee) = look_up(&built.functions, scope, &node.text) else {
         return unsupported(tables);
     };
+    // Zig coerces a bare integer literal to whatever the parameter is, so
+    // `splat(0)` passes a float. Rust does not, and the body carries no types,
+    // but the callee resolved, so the parameter it lands on says which literal
+    // was meant.
+    let landings: Vec<(ExpressionId, TypeId)> =
+        zag_facts::tables::function_parameters(&tables.functions, callee)
+            .zip(operands.iter())
+            .filter_map(|(row, operand)| {
+                Some((*operand, *tables.parameters.parameter_type.get(row)?))
+            })
+            .collect();
+    for (operand, declared) in landings {
+        if tables.types.kind.get(declared.0 as usize) != Some(&zag_facts::tables::TypeKind::Float) {
+            continue;
+        }
+        if tables.expressions.kind.get(operand.0 as usize) != Some(&ExpressionKind::Literal) {
+            continue;
+        }
+        let Some(text) = tables.expressions.text.get(operand.0 as usize).copied() else {
+            continue;
+        };
+        let mut widened = zag_facts::tables::string_bytes(&tables.strings, text).to_vec();
+        if widened.is_empty() || !widened.iter().all(|byte| byte.is_ascii_digit()) {
+            continue;
+        }
+        widened.extend_from_slice(b".0");
+        let spelled = push_string(&mut tables.strings, &widened);
+        if let Some(slot) = tables.expressions.text.get_mut(operand.0 as usize) {
+            *slot = spelled;
+        }
+    }
     let kept: Vec<ExpressionId> = zag_facts::tables::function_parameters(&tables.functions, callee)
         .zip(operands.iter())
         .filter(|(row, _)| {
@@ -1238,6 +1269,18 @@ fn builtin_method(name: &str) -> Option<(&'static str, usize)> {
         "@min" => Some(("min", 2)),
         "@max" => Some(("max", 2)),
         "@abs" => Some(("abs", 1)),
+        "@sqrt" => Some(("sqrt", 1)),
+        "@floor" => Some(("floor", 1)),
+        "@ceil" => Some(("ceil", 1)),
+        "@round" => Some(("round", 1)),
+        "@trunc" => Some(("trunc", 1)),
+        "@exp" => Some(("exp", 1)),
+        "@log" => Some(("ln", 1)),
+        "@log2" => Some(("log2", 1)),
+        "@log10" => Some(("log10", 1)),
+        "@sin" => Some(("sin", 1)),
+        "@cos" => Some(("cos", 1)),
+        "@tan" => Some(("tan", 1)),
         _ => None,
     }
 }

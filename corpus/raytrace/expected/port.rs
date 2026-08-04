@@ -197,7 +197,7 @@ pub mod vector {
     }
 
     pub fn origin() -> Vector {
-        todo!()
+        splat(0.0)
     }
 
     pub fn reflect(incoming: Vector, normal: Vector) -> Vector {

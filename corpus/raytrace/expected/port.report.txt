@@ -182,6 +182,6 @@ functions: 31
   Vector.normalize: ported, signature only, the body is still to write (vector.zig:62)
   Vector.negate: ported, signature only, the body is still to write (vector.zig:70)
   splat: ported, signature only, the body is still to write (vector.zig:75)
-  origin: ported, signature only, the body is still to write (vector.zig:79)
+  origin: ported, signature and body (vector.zig:79)
   Ray.at: ported, signature only, the body is still to write (vector.zig:89)
   reflect: ported, signature only, the body is still to write (vector.zig:94)
