@@ -84,6 +84,17 @@ pub struct Node {
     /// Whether a local was declared with `var` rather than `const`.
     pub mutable: bool,
     pub operands: Vec<u32>,
+    /// One entry per switch arm: the Zig pattern, the name it binds, and the
+    /// node its body is. The pattern is text because what a bare `.red` means
+    /// depends on the type being switched on.
+    pub arms: Vec<Arm>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Arm {
+    pub pattern: String,
+    pub capture: String,
+    pub node: u32,
 }
 
 fn value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -91,7 +102,7 @@ fn value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let rest = &line[start..];
     // These take the whole rest of the line, because the Zig they carry may
     // contain spaces and is always written last.
-    if key == "value" || key == "type" || key == "returns" || key == "text" {
+    if key == "value" || key == "type" || key == "returns" || key == "text" || key == "pattern" {
         return Some(rest);
     }
     Some(rest.split_whitespace().next().unwrap_or(rest))
@@ -225,6 +236,7 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     right: optional(line, "right"),
                     otherwise: optional(line, "otherwise"),
                     mutable: number(line, "mutable") != 0,
+                    arms: Vec::new(),
                     operands: Vec::new(),
                 };
                 if let Some(function) = function_mut(program, subject) {
@@ -242,6 +254,19 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     && let Some(entry) = function.nodes.iter_mut().find(|entry| entry.node == owner)
                 {
                     entry.operands.push(node);
+                }
+            }
+            "arm" => {
+                let owner = node_identifier(line);
+                let entry = Arm {
+                    pattern: value(line, "pattern").unwrap_or("else").to_string(),
+                    capture: value(line, "capture").unwrap_or("-").to_string(),
+                    node: number(line, "node"),
+                };
+                if let Some(function) = function_mut(program, subject)
+                    && let Some(node) = function.nodes.iter_mut().find(|node| node.node == owner)
+                {
+                    node.arms.push(entry);
                 }
             }
             "step" => {

@@ -524,6 +524,28 @@ fn render_expression(
             out.push(b' ');
             render_expression(out, ast, ast.children[children.start + 1], depth)
         }
+        NodeKind::ExpressionMatch => {
+            let children = node_children(ast, node);
+            if children.is_empty() {
+                return Err(RenderError::MissingChild { node });
+            }
+            out.extend_from_slice(b"match ");
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.extend_from_slice(b" {\n");
+            for slot in children.skip(1) {
+                indent(out, depth + 1);
+                render_expression(out, ast, ast.children[slot], depth + 1)?;
+                out.extend_from_slice(b",\n");
+            }
+            indent(out, depth);
+            out.push(b'}');
+            Ok(())
+        }
+        NodeKind::ExpressionArm => {
+            out.extend_from_slice(text_of(ast, node));
+            out.extend_from_slice(b" => ");
+            render_expression(out, ast, only_child(ast, node)?, depth)
+        }
         NodeKind::ExpressionBlock => render_block(out, ast, node, depth),
         found => Err(RenderError::WrongKind { node, found }),
     }

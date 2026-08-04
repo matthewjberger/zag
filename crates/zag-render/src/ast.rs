@@ -59,6 +59,9 @@ pub enum NodeKind {
     ExpressionWhile = 40,
     /// The name to bind in `text`, then the sequence and the body.
     ExpressionFor = 41,
+    ExpressionMatch = 42,
+    /// The pattern in `text`, the arm body as the only child.
+    ExpressionArm = 43,
 }
 
 #[repr(u32)]

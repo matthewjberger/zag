@@ -241,6 +241,10 @@ pub enum ExpressionKind {
     While = 22,
     /// The thing to walk, the body, and the name to bind each item to.
     For = 23,
+    /// The thing being matched, then one arm per child.
+    Match = 24,
+    /// The Rust pattern in `text`, the arm body as the only child.
+    Arm = 25,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]

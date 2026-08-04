@@ -1,4 +1,4 @@
-//! Reads a Zig file with the compiler's own parser and reports everything the
+﻿//! Reads a Zig file with the compiler's own parser and reports everything the
 //! fact tables need that does not require a type to decide: containers and
 //! their fields, functions and their parameters, the call graph, what each
 //! local is initialised from, and what each struct literal writes into each
@@ -188,6 +188,15 @@ fn lineOf(tree: Ast, node: Ast.Node.Index) usize {
     return tree.tokenLocation(0, tree.firstToken(node)).line + 1;
 }
 
+fn unsupportedNode(walker: Walker, node: Ast.Node.Index, raw: u32, line: usize) !void {
+    std.debug.print("expression {s} {d} kind=unsupported line={d} text={s}\n", .{
+        walker.owner,
+        raw,
+        line,
+        try collapse(walker.arena, walker.tree.getNodeSource(node)),
+    });
+}
+
 /// Prints one expression and everything under it, children first, so a reader
 /// building a tree from these lines always has a child before its parent.
 /// Nodes are named by their index in the syntax tree, which is unique per file
@@ -303,10 +312,12 @@ fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
     if (tree.fullIf(node)) |branch| {
         // A Zig `if` is an expression and so is a Rust one, so the shape
         // carries across whether it was written as a value or as a statement.
+        // The arms go through the statement reader, because `if (x) return y`
+        // puts a statement where a value would otherwise be.
         try emitExpression(walker, branch.ast.cond_expr);
-        try emitExpression(walker, branch.ast.then_expr);
+        try emitStatement(walker, branch.ast.then_expr);
         const otherwise = branch.ast.else_expr.unwrap();
-        if (otherwise) |expression| try emitExpression(walker, expression);
+        if (otherwise) |expression| try emitStatement(walker, expression);
         std.debug.print("expression {s} {d} kind=if line={d} left={d} right={d} otherwise={s}\n", .{
             walker.owner,
             raw,
@@ -375,6 +386,43 @@ fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
             });
             return;
         }
+    }
+
+    if (tree.fullSwitch(node)) |chosen| {
+        // The patterns are reported as text rather than as expressions,
+        // because what a bare `.red` means depends on the type being switched
+        // on and only the reader on the other side knows that.
+        var arms: usize = 0;
+        for (chosen.ast.cases) |case| {
+            const full_case = tree.fullSwitchCase(case) orelse continue;
+            if (full_case.ast.values.len > 1) return unsupportedNode(walker, node, raw, line);
+            try emitExpression(walker, full_case.ast.target_expr);
+            arms += 1;
+        }
+        try emitExpression(walker, chosen.ast.condition);
+        std.debug.print("expression {s} {d} kind=switch line={d} left={d} arms={d}\n", .{
+            walker.owner, raw, line, @intFromEnum(chosen.ast.condition), arms,
+        });
+        for (chosen.ast.cases, 0..) |case, index| {
+            const full_case = tree.fullSwitchCase(case) orelse continue;
+            const pattern = if (full_case.ast.values.len == 0)
+                "else"
+            else
+                try collapse(walker.arena, tree.getNodeSource(full_case.ast.values[0]));
+            const capture = if (full_case.payload_token) |token|
+                tree.tokenSlice(token)
+            else
+                "-";
+            std.debug.print("arm {s} {d} {d} node={d} capture={s} pattern={s}\n", .{
+                walker.owner,
+                raw,
+                index,
+                @intFromEnum(full_case.ast.target_expr),
+                capture,
+                pattern,
+            });
+        }
+        return;
     }
 
     var block_buffer: [2]Ast.Node.Index = undefined;
@@ -448,10 +496,10 @@ fn emitStatement(walker: Walker, node: Ast.Node.Index) anyerror!void {
         return;
     }
 
+    // Anything else is an expression standing where a statement was written,
+    // and it keeps its own node rather than gaining a wrapper that would
+    // report the same thing twice.
     try emitExpression(walker, node);
-    std.debug.print("statement {s} {d} kind=expression line={d} left={d}\n", .{
-        walker.owner, raw, line, raw,
-    });
 }
 
 fn emitBody(walker: Walker, body: Ast.Node.Index) !void {

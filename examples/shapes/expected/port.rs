@@ -25,6 +25,14 @@ pub fn area(shape: Shape) -> f32 {
     todo!()
 }
 
+pub fn shade(colour: Colour) -> u32 {
+    match colour {
+        Colour::Red => 1,
+        Colour::Green => 2,
+        Colour::Blue => 3,
+    }
+}
+
 pub fn parse(text: &[u8]) -> Result<Colour, ParseError> {
     let _ = text;
     todo!()

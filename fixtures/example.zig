@@ -1,9 +1,11 @@
-// The Zig this fixture stands for. Nothing reads this file. The Zig frontend
-// that would produce fact tables from it does not exist yet, so
-// zag-facts/src/fixture.rs hand-builds the tables this source would yield.
-// The two are kept in step by hand until the frontend lands.
+// The Zig this fixture stands for. Nothing reads this file: it is not a
+// runnable project, so `zag read` is never pointed at it, and
+// zag-facts/src/fixture.rs carries the tables it would yield. Every example
+// under examples/ is read by the frontend and checked against its hand-built
+// tables, so this is the one place the two are still kept in step by hand.
 //
-// Every ownership class the analysis can reach appears below exactly once.
+// It exists because every ownership class the analysis can reach appears below
+// exactly once, which no real program does.
 
 const std = @import("std");
 

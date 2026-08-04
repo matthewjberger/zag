@@ -282,7 +282,13 @@ with the path that reaches it from where the call is written. The allocator
 argument goes, because the ported signature does not take one. A call to
 anything else, `std` included, is not written.
 
-Everything else, a `switch`, a loop that captures or has an else, a method call
+A `switch` becomes a `match`, and its arm patterns need the type being switched
+on to say what a bare `.red` means. A parameter carries its declared type, so a
+switch over one resolves; a switch over anything else does not, and is left
+alone rather than guessed at. An `else` arm is `_`, and a union variant that
+carries a payload binds its capture.
+
+Everything else, a loop that captures or has an else, a method call
 on a value, stops the whole body. The function still comes across as a
 signature with `todo!()` in it, because a body with one hole in it looks
 finished and is not. The report says which shape stopped it and where.

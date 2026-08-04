@@ -65,6 +65,8 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
             | ExpressionKind::While
             | ExpressionKind::For
             | ExpressionKind::Call
+            | ExpressionKind::Match
+            | ExpressionKind::Arm
     ) {
         return false;
     }
@@ -221,6 +223,18 @@ fn lower_expression(
         ),
         ExpressionKind::For => {
             push_node(ast, NodeKind::ExpressionFor, name, absent(), 0, 0, &lowered)
+        }
+        ExpressionKind::Match => push_node(
+            ast,
+            NodeKind::ExpressionMatch,
+            absent(),
+            absent(),
+            0,
+            0,
+            &lowered,
+        ),
+        ExpressionKind::Arm => {
+            push_node(ast, NodeKind::ExpressionArm, name, absent(), 0, 0, &lowered)
         }
         ExpressionKind::Call => {
             let callee = tables

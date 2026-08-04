@@ -260,6 +260,24 @@ fn a_call_with_no_callee_leaves_the_body_unwritten() {
 }
 
 #[test]
+fn a_switch_becomes_a_match_with_one_arm_per_case() {
+    let program = measuring(|tables| {
+        let scrutinee = spelled(tables, ExpressionKind::Identifier, b"left", &[]);
+        let one = spelled(tables, ExpressionKind::Literal, b"1", &[]);
+        let red = spelled(tables, ExpressionKind::Arm, b"Colour::Red", &[one]);
+        let zero = spelled(tables, ExpressionKind::Literal, b"0", &[]);
+        let rest = spelled(tables, ExpressionKind::Arm, b"_", &[zero]);
+        let matched = spelled(tables, ExpressionKind::Match, b"", &[scrutinee, red, rest]);
+        let returned = spelled(tables, ExpressionKind::Return, b"", &[matched]);
+        spelled(tables, ExpressionKind::Block, b"", &[returned])
+    });
+    let source = ported(&program);
+    assert!(source.contains("match left {"), "{source}");
+    assert!(source.contains("Colour::Red => 1,"), "{source}");
+    assert!(source.contains("_ => 0,"), "{source}");
+}
+
+#[test]
 fn one_shape_the_port_cannot_spell_stops_the_whole_body() {
     let program = measuring(|tables| {
         let left = spelled(tables, ExpressionKind::Identifier, b"left", &[]);

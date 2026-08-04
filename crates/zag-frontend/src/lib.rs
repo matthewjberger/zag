@@ -1005,7 +1005,16 @@ fn declare_body(
     }
     let mut built: Vec<(u32, ExpressionId)> = Vec::new();
     for node in &function.nodes {
-        let expression = translate_node(tables, built_names, scope, node, &built);
+        let owner = scrutinee_container(
+            tables,
+            function,
+            handle,
+            built_names,
+            scope,
+            &function.nodes,
+            node.left,
+        );
+        let expression = translate_node(tables, built_names, scope, node, &built, owner);
         built.push((node.node, expression));
     }
     let statements: Vec<ExpressionId> = function
@@ -1093,6 +1102,92 @@ fn translate_call(
     expression
 }
 
+/// The container a switch is over, when the thing being switched on is a
+/// parameter whose declared type the tables carry. Without that, a bare `.red`
+/// names nothing the port can spell, so the switch is left alone.
+fn scrutinee_container(
+    tables: &Tables,
+    function: &Function,
+    handle: FunctionId,
+    built_names: &Built,
+    scope: &Scope,
+    nodes: &[program::Node],
+    scrutinee: Option<u32>,
+) -> Option<StructId> {
+    let scrutinee = scrutinee?;
+    let node = nodes.iter().find(|node| node.node == scrutinee)?;
+    if node.kind != "identifier" {
+        return None;
+    }
+    let declared = function
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == node.text)?;
+    let named = last_segment(declared.declared.trim_start_matches(['*', '?']).trim());
+    let _ = handle;
+    look_up(&built_names.structs, scope, named).filter(|owner| {
+        matches!(
+            tables.structs.kind.get(owner.0 as usize),
+            Some(ContainerKind::Enum) | Some(ContainerKind::Union) | Some(ContainerKind::ErrorSet)
+        )
+    })
+}
+
+/// A Zig `.red` written as a match arm, spelled the way Rust spells it. A
+/// variant that carries a payload binds the capture, and one that carries
+/// nothing takes no parentheses.
+fn arm_pattern(tables: &Tables, owner: StructId, pattern: &str, capture: &str) -> Option<Vec<u8>> {
+    if pattern == "else" {
+        return Some(b"_".to_vec());
+    }
+    let wanted = pattern.trim().trim_start_matches('.');
+    let row = zag_facts::tables::struct_fields(&tables.structs, owner).find(|row| {
+        zag_facts::tables::string_bytes(&tables.strings, tables.fields.name[*row])
+            == wanted.as_bytes()
+    })?;
+    let mut out =
+        zag_facts::tables::string_bytes(&tables.strings, tables.structs.name[owner.0 as usize])
+            .to_vec();
+    out.extend_from_slice(b"::");
+    out.extend_from_slice(&pascal_case(wanted.as_bytes()));
+    // Only a union's variants carry anything, which is the same rule the enum
+    // lowering uses to decide whether to write a payload at all.
+    let carries = tables.structs.kind.get(owner.0 as usize) == Some(&ContainerKind::Union)
+        && tables.fields.field_type.get(row).is_some_and(|kind| {
+            tables.types.kind.get(kind.0 as usize) != Some(&zag_facts::tables::TypeKind::Void)
+        });
+    if carries && capture != "-" {
+        out.push(b'(');
+        out.extend_from_slice(capture.as_bytes());
+        out.push(b')');
+    } else if carries {
+        out.extend_from_slice(b"(_)");
+    } else if capture != "-" {
+        // A capture on a variant that carries nothing has nothing to bind.
+        return None;
+    }
+    Some(out)
+}
+
+/// Zig spells a variant in snake case and Rust spells it in Pascal case.
+fn pascal_case(name: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(name.len());
+    let mut capitalise = true;
+    for byte in name {
+        if *byte == b'_' {
+            capitalise = true;
+            continue;
+        }
+        out.push(if capitalise {
+            byte.to_ascii_uppercase()
+        } else {
+            *byte
+        });
+        capitalise = false;
+    }
+    out
+}
+
 /// A Zig builtin that has a Rust method meaning the same thing, with no type
 /// the port would have to invent. `@truncate` and `@intFromEnum` are not here
 /// because both need a target type that the syntax does not carry.
@@ -1111,6 +1206,7 @@ fn translate_node(
     scope: &Scope,
     node: &program::Node,
     built: &[(u32, ExpressionId)],
+    owner: Option<StructId>,
 ) -> ExpressionId {
     let left = built_child(built, node.left);
     let right = built_child(built, node.right);
@@ -1233,6 +1329,40 @@ fn translate_node(
             _ => unsupported(tables),
         },
         "call" if complete => translate_call(tables, built_names, scope, node, &operands),
+        "switch" => {
+            let arms: Vec<(ExpressionId, &program::Arm)> = node
+                .arms
+                .iter()
+                .filter_map(|arm| built_child(built, Some(arm.node)).map(|body| (body, arm)))
+                .collect();
+            match (left, owner) {
+                (Some(scrutinee), Some(owner)) if arms.len() == node.arms.len() => {
+                    let mut children = vec![scrutinee];
+                    for (body, arm) in arms {
+                        let Some(pattern) = arm_pattern(tables, owner, &arm.pattern, &arm.capture)
+                        else {
+                            return unsupported(tables);
+                        };
+                        let spelled = push_string(&mut tables.strings, &pattern);
+                        children.push(push_body_expression(
+                            tables,
+                            ExpressionKind::Arm,
+                            spelled,
+                            node.line,
+                            &[body],
+                        ));
+                    }
+                    push_body_expression(
+                        tables,
+                        ExpressionKind::Match,
+                        StringId(NO_INDEX),
+                        node.line,
+                        &children,
+                    )
+                }
+                _ => unsupported(tables),
+            }
+        }
         "while" => match (left, right) {
             (Some(condition), Some(body)) => push_body_expression(
                 tables,

@@ -35,6 +35,16 @@ pub fn area(shape: Shape) f32 {
     };
 }
 
+/// A switch over an enum, which is a Rust match over the same enum. The arm
+/// patterns need the type being switched on, and a parameter carries it.
+pub fn shade(colour: Colour) u32 {
+    return switch (colour) {
+        .red => 1,
+        .green => 2,
+        .blue => 3,
+    };
+}
+
 pub fn parse(text: []const u8) ParseError!Colour {
     if (text.len == 0) return ParseError.Empty;
     if (text.len > 16) return ParseError.TooLarge;
