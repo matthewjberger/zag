@@ -31,6 +31,7 @@ fn every_evidence_kind() -> Vec<EvidenceKind> {
         EvidenceKind::AllocatorIsArena,
         EvidenceKind::AllocatorIsConflicting,
         EvidenceKind::NoAssignmentsFound,
+        EvidenceKind::ResizedAfterAllocation,
     ];
     for kind in &all {
         match kind {
@@ -43,7 +44,8 @@ fn every_evidence_kind() -> Vec<EvidenceKind> {
             | EvidenceKind::AllocatorIsGlobal
             | EvidenceKind::AllocatorIsArena
             | EvidenceKind::AllocatorIsConflicting
-            | EvidenceKind::NoAssignmentsFound => {}
+            | EvidenceKind::NoAssignmentsFound
+            | EvidenceKind::ResizedAfterAllocation => {}
         }
     }
     all
@@ -57,6 +59,7 @@ fn every_ownership_class() -> Vec<OwnershipClass> {
         OwnershipClass::Static,
         OwnershipClass::Arena,
         OwnershipClass::Unknown,
+        OwnershipClass::Grown,
     ];
     for class in &all {
         match class {
@@ -65,7 +68,8 @@ fn every_ownership_class() -> Vec<OwnershipClass> {
             | OwnershipClass::Borrowed
             | OwnershipClass::Static
             | OwnershipClass::Arena
-            | OwnershipClass::Unknown => {}
+            | OwnershipClass::Unknown
+            | OwnershipClass::Grown => {}
         }
     }
     all

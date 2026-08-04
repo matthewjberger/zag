@@ -9,6 +9,7 @@ fn class_text(class: OwnershipClass) -> &'static [u8] {
     match class {
         OwnershipClass::Value => b"value",
         OwnershipClass::Owned => b"owned",
+        OwnershipClass::Grown => b"grown",
         OwnershipClass::Borrowed => b"borrowed",
         OwnershipClass::Static => b"static",
         OwnershipClass::Arena => b"arena",
@@ -36,6 +37,9 @@ fn evidence_text(kind: EvidenceKind) -> &'static [u8] {
         EvidenceKind::AllocatorIsArena => b"allocator resolves to an arena",
         EvidenceKind::AllocatorIsConflicting => b"allocator does not resolve to one allocator",
         EvidenceKind::NoAssignmentsFound => b"no assignment to this field was found",
+        EvidenceKind::ResizedAfterAllocation => {
+            b"resized after allocation, so its length is not fixed"
+        }
     }
 }
 
@@ -146,11 +150,21 @@ fn declared_deinit_disappears(
             continue;
         }
         freed += 1;
-        if ownership.class.get(row) != Some(&OwnershipClass::Owned) {
+        if !frees_on_drop(ownership.class.get(row)) {
             return false;
         }
     }
     freed > 0
+}
+
+/// Whether the field's own type releases it. Both owned classes do, which is
+/// what lets a `deinit` that only frees them disappear into `Drop`. They differ
+/// in what carries the memory, not in who gives it back.
+fn frees_on_drop(class: Option<&OwnershipClass>) -> bool {
+    matches!(
+        class,
+        Some(OwnershipClass::Owned) | Some(OwnershipClass::Grown)
+    )
 }
 
 /// A helper the deinit calls disappears on the same grounds the deinit does.
@@ -177,7 +191,7 @@ fn frees_and_nothing_else(
             .get(row)
             .copied()
             .unwrap_or(FieldId(NO_INDEX));
-        if ownership.class.get(field.0 as usize) != Some(&OwnershipClass::Owned) {
+        if !frees_on_drop(ownership.class.get(field.0 as usize)) {
             return false;
         }
     }

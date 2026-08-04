@@ -102,6 +102,10 @@ pub enum AllocatorSourceKind {
 pub enum MemoryOperationKind {
     Allocate = 0,
     Free = 1,
+    /// The allocation changed length after it was made. A field this reaches
+    /// is still owned, but its length is not fixed, which is the difference
+    /// between a boxed slice and a vector.
+    Resize = 2,
 }
 
 #[repr(u8)]

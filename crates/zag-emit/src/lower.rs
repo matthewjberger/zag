@@ -248,6 +248,9 @@ pub fn lower_field_type(
         OwnershipClass::Owned => {
             push_node(ast, NodeKind::TypeBoxed, absent(), absent(), 0, 0, &[body])
         }
+        OwnershipClass::Grown => {
+            push_node(ast, NodeKind::TypeVec, absent(), absent(), 0, 0, &[body])
+        }
         OwnershipClass::Borrowed => reference(ast, body, Lifetime::Borrow),
         OwnershipClass::Static => reference(ast, body, Lifetime::Static),
         OwnershipClass::Arena => reference(ast, body, Lifetime::Arena),

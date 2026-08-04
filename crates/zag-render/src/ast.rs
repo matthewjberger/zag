@@ -62,6 +62,8 @@ pub enum NodeKind {
     ExpressionMatch = 42,
     /// The pattern in `text`, the arm body as the only child.
     ExpressionArm = 43,
+    /// Owned with a length that moves, which a boxed slice cannot carry.
+    TypeVec = 44,
 }
 
 #[repr(u32)]

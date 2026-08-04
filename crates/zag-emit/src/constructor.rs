@@ -63,10 +63,22 @@ fn integer_name(tables: &Tables, kind: zag_facts::TypeId) -> Vec<u8> {
     format!("{prefix}{width}").into_bytes()
 }
 
+/// The class of the field the value is going into, which decides how an
+/// allocation is copied. Nothing else in an initialiser depends on it.
+fn class_of(ownership: &Ownership, field: FieldId) -> OwnershipClass {
+    ownership
+        .class
+        .get(field.0 as usize)
+        .copied()
+        .unwrap_or(OwnershipClass::Unknown)
+}
+
 fn lower_expression(
     ast: &mut Ast,
     tables: &Tables,
+    ownership: &Ownership,
     function: FunctionId,
+    field: FieldId,
     expression: ExpressionId,
 ) -> NodeId {
     let index = expression.0 as usize;
@@ -104,7 +116,7 @@ fn lower_expression(
                 .next()
                 .and_then(|slot| tables.expressions.children.get(slot).copied());
             let child = match inner {
-                Some(child) => lower_expression(ast, tables, function, child),
+                Some(child) => lower_expression(ast, tables, ownership, function, field, child),
                 None => return unsupported(ast),
             };
             let text = integer_name(tables, tables.expressions.result[index]);
@@ -115,6 +127,20 @@ fn lower_expression(
             let text = parameter_name(tables, function, parameter);
             let argument = push_string(&mut ast.strings, &text);
             let path = push_node(ast, NodeKind::ExpressionPath, argument, absent(), 0, 0, &[]);
+            // Both copy what they were handed. Which one is right is decided by
+            // the field, because that is what fixes the type it is copied into.
+            if class_of(ownership, field) == OwnershipClass::Grown {
+                let method = push_string(&mut ast.strings, b"to_vec");
+                return push_node(
+                    ast,
+                    NodeKind::ExpressionMethod,
+                    method,
+                    absent(),
+                    0,
+                    0,
+                    &[path],
+                );
+            }
             let callee = push_string(&mut ast.strings, b"Box::from");
             push_node(
                 ast,
@@ -132,14 +158,8 @@ fn lower_expression(
                 let inner = expression_children(tables, expression)
                     .next()
                     .and_then(|slot| tables.expressions.children.get(slot).copied());
-                let declared = tables
-                    .fields
-                    .field_type
-                    .get(field.0 as usize)
-                    .copied()
-                    .unwrap_or(zag_facts::TypeId(NO_INDEX));
                 let value = match inner {
-                    Some(child) => lower_value(ast, tables, function, declared, child),
+                    Some(child) => lower_value(ast, tables, ownership, function, field, child),
                     None => return unsupported(ast),
                 };
                 let text = name_of(tables, tables.fields.name.get(field.0 as usize));
@@ -148,7 +168,7 @@ fn lower_expression(
             }
             let children: Vec<NodeId> = expression_children(tables, expression)
                 .filter_map(|slot| tables.expressions.children.get(slot).copied())
-                .map(|child| lower_expression(ast, tables, function, child))
+                .map(|child| lower_expression(ast, tables, ownership, function, field, child))
                 .collect();
             let text = struct_named(tables, tables.expressions.result[index]);
             let name = push_string(&mut ast.strings, &text);
@@ -176,15 +196,22 @@ fn lower_expression(
 fn lower_value(
     ast: &mut Ast,
     tables: &Tables,
+    ownership: &Ownership,
     function: FunctionId,
-    declared: zag_facts::TypeId,
+    field: FieldId,
     expression: ExpressionId,
 ) -> NodeId {
-    let node = lower_expression(ast, tables, function, expression);
+    let node = lower_expression(ast, tables, ownership, function, field, expression);
     let kind = tables.expressions.kind.get(expression.0 as usize).copied();
     if kind == Some(ExpressionKind::Null) {
         return node;
     }
+    let declared = tables
+        .fields
+        .field_type
+        .get(field.0 as usize)
+        .copied()
+        .unwrap_or(zag_facts::TypeId(NO_INDEX));
     if tables.types.kind.get(declared.0 as usize) != Some(&zag_facts::tables::TypeKind::Optional) {
         return node;
     }
@@ -369,13 +396,7 @@ pub fn lower_constructor(
     for row in struct_fields(&tables.structs, owner) {
         let field = FieldId(row as u32);
         let expression = assignment_for(tables, lowering.index, function, field)?;
-        let declared = tables
-            .fields
-            .field_type
-            .get(row)
-            .copied()
-            .unwrap_or(zag_facts::TypeId(NO_INDEX));
-        let value = lower_value(ast, tables, function, declared, expression);
+        let value = lower_value(ast, tables, ownership, function, field, expression);
         let text = name_of(tables, tables.fields.name.get(row));
         let name = push_string(&mut ast.strings, &text);
         values.push(push_node(

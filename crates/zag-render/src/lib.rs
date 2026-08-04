@@ -215,6 +215,18 @@ fn render_type(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
             out.extend_from_slice(b">");
             Ok(())
         }
+        // A vector holds its elements rather than a slice of them, so the
+        // brackets a boxed slice needs come off.
+        NodeKind::TypeVec => {
+            out.extend_from_slice(b"Vec<");
+            let body = only_child(ast, node)?;
+            match ast.kind[body.0 as usize] {
+                NodeKind::TypeSliceBody => render_type(out, ast, only_child(ast, body)?)?,
+                _ => render_type(out, ast, body)?,
+            }
+            out.extend_from_slice(b">");
+            Ok(())
+        }
         NodeKind::TypeReference => {
             out.extend_from_slice(b"&");
             let lifetime = lifetime_text(ast.flags[node.0 as usize]);

@@ -15,6 +15,10 @@ pub enum OwnershipClass {
     Static = 3,
     Arena = 4,
     Unknown = 5,
+    /// Owned, and the length moves after the allocation is made. The same
+    /// answer about who frees it, a different answer about what type carries
+    /// it, because a boxed slice cannot grow.
+    Grown = 6,
 }
 
 #[repr(u8)]
@@ -38,6 +42,7 @@ pub enum EvidenceKind {
     AllocatorIsArena = 7,
     AllocatorIsConflicting = 8,
     NoAssignmentsFound = 9,
+    ResizedAfterAllocation = 10,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -56,6 +61,8 @@ pub struct Ownership {
 pub struct FieldIndex {
     pub free_start: Vec<u32>,
     pub free_rows: Vec<u32>,
+    pub resize_start: Vec<u32>,
+    pub resize_rows: Vec<u32>,
     pub assignment_start: Vec<u32>,
     pub assignment_rows: Vec<u32>,
 }
@@ -78,9 +85,11 @@ fn group_rows(fields: usize, pairs: &[(u32, u32)]) -> (Vec<u32>, Vec<u32>) {
     (start, grouped)
 }
 
-fn freed_field(tables: &Tables, row: usize) -> Option<u32> {
+/// The field a memory operation of the given kind touches, when it touches one
+/// that exists.
+fn operated_field(tables: &Tables, row: usize, wanted: MemoryOperationKind) -> Option<u32> {
     let operations = &tables.memory_operations;
-    if operations.kind.get(row) != Some(&MemoryOperationKind::Free) {
+    if operations.kind.get(row) != Some(&wanted) {
         return None;
     }
     if operations.place.get(row) != Some(&PlaceKind::FieldOfParameter) {
@@ -92,8 +101,17 @@ fn freed_field(tables: &Tables, row: usize) -> Option<u32> {
 
 pub fn build_field_index(tables: &Tables) -> FieldIndex {
     let fields = field_count(&tables.fields);
-    let free_pairs: Vec<(u32, u32)> = (0..memory_operation_count(&tables.memory_operations))
-        .filter_map(|row| freed_field(tables, row).map(|field| (row as u32, field)))
+    let operations = memory_operation_count(&tables.memory_operations);
+    let free_pairs: Vec<(u32, u32)> = (0..operations)
+        .filter_map(|row| {
+            operated_field(tables, row, MemoryOperationKind::Free).map(|field| (row as u32, field))
+        })
+        .collect();
+    let resize_pairs: Vec<(u32, u32)> = (0..operations)
+        .filter_map(|row| {
+            operated_field(tables, row, MemoryOperationKind::Resize)
+                .map(|field| (row as u32, field))
+        })
         .collect();
     let assignment_pairs: Vec<(u32, u32)> = (0..tables.field_assignments.field.len())
         .filter_map(|row| {
@@ -102,10 +120,13 @@ pub fn build_field_index(tables: &Tables) -> FieldIndex {
         })
         .collect();
     let (free_start, free_rows) = group_rows(fields, &free_pairs);
+    let (resize_start, resize_rows) = group_rows(fields, &resize_pairs);
     let (assignment_start, assignment_rows) = group_rows(fields, &assignment_pairs);
     FieldIndex {
         free_start,
         free_rows,
+        resize_start,
+        resize_rows,
         assignment_start,
         assignment_rows,
     }
@@ -194,6 +215,34 @@ fn gather_free_facts(
     facts
 }
 
+/// Whether anything changes the length of what this field points at. The
+/// evidence row goes in whether or not it changes the class, because a reader
+/// deciding what the field should be needs to see the resize either way.
+fn gather_resize_facts(
+    tables: &Tables,
+    index: &FieldIndex,
+    field: FieldId,
+    ownership: &mut Ownership,
+) -> bool {
+    let slot = field.0 as usize;
+    let mut resized = false;
+    for entry in index.resize_start[slot] as usize..index.resize_start[slot + 1] as usize {
+        let row = index.resize_rows[entry] as usize;
+        let function = tables
+            .memory_operations
+            .function
+            .get(row)
+            .copied()
+            .unwrap_or(FunctionId(NO_INDEX));
+        resized = true;
+        ownership
+            .evidence_kind
+            .push(EvidenceKind::ResizedAfterAllocation);
+        ownership.evidence_function.push(function);
+    }
+    resized
+}
+
 fn gather_assignment_facts(
     tables: &Tables,
     provenance: &Provenance,
@@ -279,7 +328,11 @@ fn only(flag: bool, others: [bool; 3]) -> bool {
     flag && !others[0] && !others[1] && !others[2]
 }
 
-fn decide(free: FreeFacts, assignment: AssignmentFacts) -> (OwnershipClass, Confidence) {
+fn decide(
+    free: FreeFacts,
+    assignment: AssignmentFacts,
+    resized: bool,
+) -> (OwnershipClass, Confidence) {
     let AssignmentFacts {
         has_allocation,
         has_parameter,
@@ -302,7 +355,15 @@ fn decide(free: FreeFacts, assignment: AssignmentFacts) -> (OwnershipClass, Conf
         } else {
             Confidence::Medium
         };
-        return (OwnershipClass::Owned, confidence);
+        // Who frees it is the same answer either way. What can hold it is not:
+        // a boxed slice is exactly as long as it was allocated, so a field
+        // something reallocates has to be a vector.
+        let class = if resized {
+            OwnershipClass::Grown
+        } else {
+            OwnershipClass::Owned
+        };
+        return (class, confidence);
     }
     if !free.freed && only(has_literal, [has_allocation, has_parameter, has_unknown]) {
         return (OwnershipClass::Static, Confidence::High);
@@ -332,9 +393,10 @@ pub fn classify_ownership(
             Some(kind) if is_reference_type(&tables.types, kind) => {
                 let free =
                     gather_free_facts(tables, graph, &mut closure, &index, field, &mut ownership);
+                let resized = gather_resize_facts(tables, &index, field, &mut ownership);
                 let assignment =
                     gather_assignment_facts(tables, provenance, &index, field, &mut ownership);
-                decide(free, assignment)
+                decide(free, assignment, resized)
             }
             Some(_) => (OwnershipClass::Value, Confidence::High),
             None => (OwnershipClass::Unknown, Confidence::Low),

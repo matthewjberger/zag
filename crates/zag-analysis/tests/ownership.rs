@@ -234,3 +234,70 @@ fn analysis_is_deterministic() {
     let tables = example_tables();
     assert_eq!(analyze(&tables), analyze(&tables));
 }
+
+/// A resize is what separates a field whose length is fixed from one that
+/// moves, which is the difference between a boxed slice and a vector. Both are
+/// owned, so nothing about who frees it changes.
+fn with_a_resize_of(tables: &mut Tables, field: FieldId) {
+    let allocate_row = tables
+        .memory_operations
+        .kind
+        .iter()
+        .position(|kind| *kind == MemoryOperationKind::Allocate)
+        .expect("the fixture allocates something");
+    let function = tables.memory_operations.function[allocate_row];
+    let allocator = tables.memory_operations.allocator[allocate_row];
+    zag_facts::build::push_memory_operation(
+        tables,
+        function,
+        MemoryOperationKind::Resize,
+        allocator,
+        zag_facts::tables::PlaceKind::FieldOfParameter,
+        field,
+    );
+}
+
+#[test]
+fn an_owned_field_something_reallocates_is_grown_rather_than_owned() {
+    let mut tables = example_tables();
+    let field = field_named(&tables, b"Buffer", b"data");
+    with_a_resize_of(&mut tables, field);
+    let analysis = analyze(&tables);
+    assert_eq!(
+        (
+            analysis.ownership.class[field.0 as usize],
+            analysis.ownership.confidence[field.0 as usize]
+        ),
+        (OwnershipClass::Grown, Confidence::High)
+    );
+}
+
+#[test]
+fn a_resized_field_says_so_in_its_evidence() {
+    let mut tables = example_tables();
+    let field = field_named(&tables, b"Buffer", b"data");
+    with_a_resize_of(&mut tables, field);
+    let analysis = analyze(&tables);
+    let kinds: Vec<EvidenceKind> = field_evidence(&analysis.ownership, field)
+        .map(|row| analysis.ownership.evidence_kind[row])
+        .collect();
+    assert!(
+        kinds.contains(&EvidenceKind::ResizedAfterAllocation),
+        "{kinds:?}"
+    );
+}
+
+/// A resize only splits the class the resize is about. A field nobody owns is
+/// still nobody's, and saying otherwise would be inventing an owner from a
+/// length change.
+#[test]
+fn a_resize_of_a_borrowed_field_leaves_it_borrowed() {
+    let mut tables = example_tables();
+    let field = field_named(&tables, b"View", b"bytes");
+    with_a_resize_of(&mut tables, field);
+    let analysis = analyze(&tables);
+    assert_eq!(
+        analysis.ownership.class[field.0 as usize],
+        OwnershipClass::Borrowed
+    );
+}

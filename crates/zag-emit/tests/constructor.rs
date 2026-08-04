@@ -291,3 +291,39 @@ fn the_coverage_example_gets_the_constructor_its_expressions_allow() {
         "{source}"
     );
 }
+
+/// A boxed slice is exactly as long as it was allocated, so a field something
+/// reallocates has to be a vector, and the copy that fills it has to be the one
+/// that produces a vector.
+#[test]
+fn a_field_that_is_reallocated_becomes_a_vector_rather_than_a_boxed_slice() {
+    let mut tables = zag_facts::examples::tables_for("netpacket").expect("registered");
+    let field = tables
+        .fields
+        .name
+        .iter()
+        .position(|name| zag_facts::tables::string_bytes(&tables.strings, *name) == b"payload")
+        .expect("the packet carries a payload");
+    let allocate = tables
+        .memory_operations
+        .kind
+        .iter()
+        .position(|kind| *kind == zag_facts::tables::MemoryOperationKind::Allocate)
+        .expect("the packet allocates its payload");
+    let function = tables.memory_operations.function[allocate];
+    let allocator = tables.memory_operations.allocator[allocate];
+    zag_facts::build::push_memory_operation(
+        &mut tables,
+        function,
+        zag_facts::tables::MemoryOperationKind::Resize,
+        allocator,
+        zag_facts::tables::PlaceKind::FieldOfParameter,
+        FieldId(field as u32),
+    );
+    let analysis = analyze(&tables);
+    let ast = lower(&tables, &analysis.ownership);
+    let source = String::from_utf8(render(&ast).expect("renders")).expect("text");
+    assert!(source.contains("pub payload: Vec<u8>,"), "{source}");
+    assert!(source.contains("payload: body.to_vec(),"), "{source}");
+    assert!(!source.contains("Box<[u8]>"), "{source}");
+}

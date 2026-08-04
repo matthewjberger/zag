@@ -123,7 +123,7 @@ fn arbitrary_tables() -> impl Strategy<Value = Tables> {
         prop::collection::vec(0u32..7, 0..12),
         arbitrary_words(),
         prop::collection::vec(0u32..4, 0..12),
-        prop::collection::vec(0u32..2, 0..12),
+        prop::collection::vec(0u32..3, 0..12),
         prop::collection::vec(0u32..3, 0..12),
         any::<u32>(),
     )
@@ -186,7 +186,8 @@ fn allocator_kind_from_index(index: u32) -> AllocatorSourceKind {
 fn operation_kind_from_index(index: u32) -> MemoryOperationKind {
     match index {
         0 => MemoryOperationKind::Allocate,
-        _ => MemoryOperationKind::Free,
+        1 => MemoryOperationKind::Free,
+        _ => MemoryOperationKind::Resize,
     }
 }
 

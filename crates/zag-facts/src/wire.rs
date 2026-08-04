@@ -146,6 +146,7 @@ fn memory_operation_kind_from_raw(value: u32) -> Result<MemoryOperationKind, Dec
     match value {
         0 => Ok(MemoryOperationKind::Allocate),
         1 => Ok(MemoryOperationKind::Free),
+        2 => Ok(MemoryOperationKind::Resize),
         other => Err(DecodeError::UnknownEnumValue {
             column: "memory_operations.kind",
             value: other,

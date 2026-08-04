@@ -57,7 +57,8 @@ Buffer.data
 | class | what zag found | emitted Rust | what you check |
 |---|---|---|---|
 | `value` | the field is not a pointer or a slice | the scalar type | nothing |
-| `owned` | allocated from the global allocator, freed through the owner's `deinit` | `Box<[T]>` or `Box<T>` | that `Drop` now does what the Zig free did |
+| `owned` | allocated from the global allocator, freed through the owner's `deinit`, and never resized | `Box<[T]>` or `Box<T>` | that `Drop` now does what the Zig free did |
+| `grown` | the same, and something reallocates it, so its length is not fixed | `Vec<T>` | that nothing relied on the address staying put |
 | `borrowed` | assigned from a parameter the caller keeps, never freed | `&'a [T]`, and the struct gains `<'a>` | that the caller really outlives the struct |
 | `static` | assigned only from literals, never freed | `&'static [T]` | nothing |
 | `arena` | allocated from an arena | `&'bump [T]`, and the struct gains `<'bump>` | that the arena outlives the struct |
@@ -88,6 +89,7 @@ port means the port has a pointer nobody owns.
 | `allocator resolves to an arena` | the arena owns it, `Box` would double free |
 | `allocator does not resolve to one allocator` | two callers disagree. One of them is a bug, or the function needs splitting |
 | `no assignment to this field was found` | nothing in the program writes this field |
+| `resized after allocation, so its length is not fixed` | a `realloc` reaches this field, which is why it is a `Vec` rather than a `Box<[T]>` |
 
 A `warning:` line above the fields means allocator provenance did not settle.
 Every allocator below it is understated, so treat the whole report as
@@ -292,14 +294,16 @@ alignment of `T` and nothing more, so a port that drops the request is one
 alignment fault away from a crash on a platform that cares. Check every
 `align(` in the Zig by hand.
 
-`owned` becomes `Box<[T]>`, and that is right only for a field whose length
-never changes after it is assigned. Zig reaches for `allocator.realloc` and
-`ArrayList` constantly, and a field that grows is a `Vec<T>`. The analysis does
-not yet tell the two apart: it sees the allocation and the free and says owned,
-and the emitter writes the boxed slice either way. So check every owned field
-for a later `realloc` or a stored `ArrayList` before you write against it,
-because the type will compile and then refuse to grow, and changing it
-afterwards is the one edit step 4 tells you not to make blind.
+`owned` becomes `Box<[T]>`, which is right only for a field whose length never
+changes after it is assigned. A field a `realloc` reaches is `grown` instead
+and becomes `Vec<T>`, on the evidence line that says so.
+
+That is read by spelling, so it finds `allocator.realloc(self.data, n)` and
+does not find a `std.ArrayList` stored in the field, or a resize that goes
+through a helper taking the field as a parameter. Check an `owned` field for
+both before you write against it: the boxed slice will compile and then refuse
+to grow, and changing it afterwards is the one edit step 4 tells you not to
+make blind.
 
 `toOwnedSlice` shrinks to fit and `Vec` keeps its capacity, so swapping one for
 the other changes the memory profile of anything hot.

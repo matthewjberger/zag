@@ -98,6 +98,7 @@ fn memory_kind(kind: MemoryOperationKind) -> &'static str {
     match kind {
         MemoryOperationKind::Allocate => "allocate",
         MemoryOperationKind::Free => "free",
+        MemoryOperationKind::Resize => "resize",
     }
 }
 

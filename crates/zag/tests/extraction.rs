@@ -25,6 +25,7 @@ const ALLOCATING: [&str; 6] = [
     "realloc",
 ];
 const FREEING: [&str; 2] = ["free", "destroy"];
+const RESIZING: [&str; 3] = ["realloc", "reallocAdvanced", "resize"];
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -235,6 +236,7 @@ fn every_memory_operation_in_the_tables_happens_in_the_program() {
             let (verbs, description) = match tables.memory_operations.kind[row] {
                 MemoryOperationKind::Allocate => (ALLOCATING.as_slice(), "allocate"),
                 MemoryOperationKind::Free => (FREEING.as_slice(), "free"),
+                MemoryOperationKind::Resize => (RESIZING.as_slice(), "resize"),
             };
             assert!(
                 calls_in(&extraction, &owner, verbs),

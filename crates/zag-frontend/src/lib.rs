@@ -31,6 +31,10 @@ const ALLOCATING: [&str; 6] = [
     "realloc",
 ];
 const FREEING: [&str; 2] = ["free", "destroy"];
+/// Calls that change the length of an allocation already made. A field one of
+/// these reaches is owned with a length that moves, which Rust spells as a
+/// vector rather than a boxed slice.
+const RESIZING: [&str; 3] = ["realloc", "reallocAdvanced", "resize"];
 const GLOBAL_ALLOCATORS: [&str; 4] = [
     "page_allocator",
     "c_allocator",
@@ -1559,9 +1563,16 @@ fn declare_memory(
         }
 
         for call in &function.calls {
-            if !FREEING.contains(&last_segment(&call.callee)) {
+            let name = last_segment(&call.callee);
+            let kind = if FREEING.contains(&name) {
+                MemoryOperationKind::Free
+            } else if RESIZING.contains(&name) {
+                MemoryOperationKind::Resize
+            } else {
                 continue;
-            }
+            };
+            // Both spellings take the allocation as their first argument, so
+            // which field is touched is read the same way for either.
             let Some(text) = call.arguments.first() else {
                 continue;
             };
@@ -1572,7 +1583,7 @@ fn declare_memory(
             push_memory_operation(
                 tables,
                 handle,
-                MemoryOperationKind::Free,
+                kind,
                 source,
                 PlaceKind::FieldOfParameter,
                 field,

@@ -373,3 +373,49 @@ fn a_field_allocated_in_one_file_and_freed_in_another_still_comes_out_owned() {
         "no single file says who owns the label, so reading them together is the whole point"
     );
 }
+
+/// The whole point of reading the Zig rather than the struct: `grow` is the
+/// only function that says the length moves, and it is not the one that
+/// allocates, frees, or declares the field.
+#[test]
+fn a_field_the_zig_reallocates_comes_out_grown_rather_than_owned() {
+    let directory = scratch("reallocated");
+    let root = write(
+        &directory,
+        "main.zig",
+        "const std = @import(\"std\");\n\
+         pub const Buffer = struct {\n\
+         \x20   data: []u8,\n\
+         \x20   pub fn init(allocator: std.mem.Allocator, bytes: []const u8) !Buffer {\n\
+         \x20       return .{ .data = try allocator.dupe(u8, bytes) };\n\
+         \x20   }\n\
+         \x20   pub fn grow(self: *Buffer, allocator: std.mem.Allocator, size: usize) !void {\n\
+         \x20       self.data = try allocator.realloc(self.data, size);\n\
+         \x20   }\n\
+         \x20   pub fn deinit(self: *Buffer, allocator: std.mem.Allocator) void {\n\
+         \x20       allocator.free(self.data);\n\
+         \x20   }\n\
+         };\n\
+         pub fn makeBuffer(bytes: []const u8) !Buffer {\n\
+         \x20   return Buffer.init(std.heap.c_allocator, bytes);\n\
+         }\n\
+         pub fn main() void {}\n",
+    );
+    let Some(project) = read(&root) else { return };
+    let tables = zag_frontend::build_project(&project, "x86_64-linux");
+    assert_eq!(zag_facts::validate::validate(&tables), Ok(()));
+    let analysis = zag_analysis::analyze(&tables);
+    let field = tables
+        .fields
+        .name
+        .iter()
+        .position(|name| zag_facts::tables::string_bytes(&tables.strings, *name) == b"data")
+        .expect("the buffer declares data");
+    assert_eq!(
+        analysis.ownership.class[field],
+        zag_analysis::ownership::OwnershipClass::Grown
+    );
+    let output = zag::generate(&tables).expect("the tables port");
+    let source = String::from_utf8(output.source).expect("the port is text");
+    assert!(source.contains("pub data: Vec<u8>,"), "{source}");
+}
