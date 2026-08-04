@@ -1,0 +1,101 @@
+zag ownership report
+target: x86_64-linux
+artifacts: 1
+  executable machine: main.zig
+modules: 2
+  main.zig
+  opcode.zig
+fields: 20
+
+Machine.stack
+  class: value
+  confidence: high
+
+Machine.depth
+  class: value
+  confidence: high
+
+Machine.steps
+  class: value
+  confidence: high
+
+Op.push
+  class: value
+  confidence: high
+
+Op.add
+  class: value
+  confidence: high
+
+Op.subtract
+  class: value
+  confidence: high
+
+Op.multiply
+  class: value
+  confidence: high
+
+Op.duplicate
+  class: value
+  confidence: high
+
+Op.drop
+  class: value
+  confidence: high
+
+Op.jump_if_zero
+  class: value
+  confidence: high
+
+Op.halt
+  class: value
+  confidence: high
+
+Value.number
+  class: value
+  confidence: high
+
+Value.flag
+  class: value
+  confidence: high
+
+Instruction.op
+  class: value
+  confidence: high
+
+Instruction.operand
+  class: value
+  confidence: high
+
+Fault.StackOverflow
+  class: value
+  confidence: high
+
+Fault.StackUnderflow
+  class: value
+  confidence: high
+
+Fault.TypeMismatch
+  class: value
+  confidence: high
+
+Fault.BadJump
+  class: value
+  confidence: high
+
+Fault.NoHalt
+  class: value
+  confidence: high
+
+functions: 10
+  Machine.init: ported, signature only, the body is still to write (main.zig:13)
+    no constructor: stack is set from undefined, which the port cannot spell (main.zig:15)
+  Machine.push: ported, signature only, the body is still to write (main.zig:21)
+  Machine.pop: ported, signature only, the body is still to write (main.zig:29)
+  Machine.popNumber: ported, signature only, the body is still to write (main.zig:37)
+  Machine.top: ported, signature and body (main.zig:45)
+  Machine.run: ported, signature only, the body is still to write (main.zig:52)
+  main: still to write, the error set it can fail with has no name (main.zig:96)
+  push: ported, signature only, the body is still to write (opcode.zig:36)
+  plain: ported, signature only, the body is still to write (opcode.zig:40)
+  describe: ported, signature and body (opcode.zig:44)

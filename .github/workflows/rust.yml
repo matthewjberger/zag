@@ -73,6 +73,23 @@ jobs:
       - name: The pipeline output matches what is checked in
         run: git diff --exit-code examples
 
+  corpus:
+    name: Corpus projects build on their own
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      # Each project is standalone, so it is built from inside its own
+      # directory rather than through anything this repository provides.
+      - name: Build and run every corpus project
+        run: |
+          for directory in corpus/*/; do
+            echo "== $directory"
+            (cd "$directory" && zig build run)
+          done
+
   examples:
     name: Example programs build on their own
     runs-on: ubuntu-latest

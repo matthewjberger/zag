@@ -10,3 +10,5 @@
 # Zig build output inside the example projects.
 .zig-cache/
 zig-out/
+corpus/*/zig-out/
+corpus/*/.zig-cache/

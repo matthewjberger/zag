@@ -83,6 +83,42 @@ examples-zig:
         (cd "$directory" && zig build run)
     done
 
+# Ports every corpus project and rewrites the expected output beside each one
+#
+# The corpus is whole Zig projects read through their build scripts, so this
+# needs zig on PATH. `cargo test` compares against these files, so a deliberate
+# change to any pass is landed by running this and reading the diff.
+[windows]
+corpus:
+    @Get-ChildItem corpus -Directory | ForEach-Object { $name = $_.Name; cargo run -q -p zag -- read --zig "corpus/$name" --output "target/corpus-$name.facts"; cargo run -q -p zag -- emit --facts "target/corpus-$name.facts" --source "corpus/$name/expected/port.rs" --report "corpus/$name/expected/port.report.txt"; Write-Host "ported $name" }
+
+# Ports every corpus project and rewrites the expected output beside each one
+[unix]
+corpus:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for directory in corpus/*/; do
+        name=$(basename "$directory")
+        cargo run -q -p zag -- read --zig "corpus/$name" --output "target/corpus-$name.facts"
+        cargo run -q -p zag -- emit --facts "target/corpus-$name.facts" --source "corpus/$name/expected/port.rs" --report "corpus/$name/expected/port.report.txt"
+        echo "ported $name"
+    done
+
+# Builds and runs every corpus project. Needs zig on PATH
+[windows]
+corpus-zig:
+    @Get-ChildItem corpus -Directory | ForEach-Object { Write-Host "== $($_.Name)"; Push-Location $_.FullName; zig build run; if ($LASTEXITCODE -ne 0) { Pop-Location; throw "$($_.Name) failed" }; Pop-Location }
+
+# Builds and runs every corpus project. Needs zig on PATH
+[unix]
+corpus-zig:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for directory in corpus/*/; do
+        echo "== $directory"
+        (cd "$directory" && zig build run)
+    done
+
 # Regenerates the checked in output beside every example
 #
 # `cargo test` compares what the pipeline produces against every `expected`

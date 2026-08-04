@@ -1,0 +1,47 @@
+zag ownership report
+target: x86_64-linux
+artifacts: 1
+  executable lifegrid: main.zig
+modules: 1
+  main.zig
+fields: 5
+
+Grid.cells
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Grid.scratch
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Grid.width
+  class: value
+  confidence: high
+
+Grid.height
+  class: value
+  confidence: high
+
+Grid.generation
+  class: value
+  confidence: high
+
+functions: 11
+  Grid.init: still to write, the error set it can fail with has no name (main.zig:14)
+    no constructor: cells is set from allocator.alloc(u8, area), which the port cannot spell (main.zig:17)
+  Grid.deinit: disappears, Drop frees what it freed (main.zig:25)
+  Grid.index: ported, signature and body (main.zig:30)
+  Grid.clear: ported, signature only, the body is still to write (main.zig:34)
+  Grid.set: ported, signature only, the body is still to write (main.zig:40)
+  Grid.get: ported, signature only, the body is still to write (main.zig:44)
+  Grid.neighbours: ported, signature only, the body is still to write (main.zig:48)
+  Grid.step: ported, signature only, the body is still to write (main.zig:75)
+  Grid.population: ported, signature only, the body is still to write (main.zig:95)
+  glider: ported, signature only, the body is still to write (main.zig:104)
+  main: still to write, the error set it can fail with has no name (main.zig:113)

@@ -66,6 +66,13 @@ conflict hands one allocator parameter a heap from one caller and an arena
 from another, so it ports to nothing usable, which is the finding rather than a
 failure. [examples/README.md](examples/README.md) covers each in full.
 
+[corpus/](corpus) is the other half: whole Zig projects written as ordinary
+programs rather than as cases for the analysis, read through their build
+scripts and ported end to end. Examples are written by the person writing the
+analysis and come out the shape it expects. The corpus is where the pipeline
+meets code nobody bent to fit it, and `corpus/README.md` lists what that
+currently gets wrong.
+
 ## How the tool is validated
 
 Those programs are how zag is checked, and the chain runs from real Zig to

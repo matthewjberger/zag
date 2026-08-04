@@ -1,0 +1,60 @@
+zag ownership report
+target: x86_64-linux
+artifacts: 1
+  executable config: main.zig
+modules: 3
+  document.zig
+  main.zig
+  parser.zig
+fields: 8
+
+Entry.section
+  class: unknown
+  confidence: low
+  evidence: assigned from an unrecognised source (parse)
+
+Entry.key
+  class: unknown
+  confidence: low
+  evidence: assigned from an unrecognised source (parse)
+
+Entry.value
+  class: unknown
+  confidence: low
+  evidence: assigned from an unrecognised source (parse)
+
+Document.text
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an allocation (parse)
+  evidence: allocator resolves to the global allocator
+
+Document.entries
+  class: unknown
+  confidence: low
+  evidence: freed inside the deinit call closure (deinit)
+  evidence: assigned from an unrecognised source (parse)
+
+Error.MissingEquals
+  class: value
+  confidence: high
+
+Error.UnterminatedSection
+  class: value
+  confidence: high
+
+Error.EmptyKey
+  class: value
+  confidence: high
+
+functions: 9
+  Document.deinit: ported, signature only, the body is still to write (document.zig:24)
+  Document.lookup: ported, signature and body (document.zig:29)
+  Document.count: ported, signature and body (document.zig:38)
+  Document.sectionSize: ported, signature only, the body is still to write (document.zig:42)
+  main: still to write, the error set it can fail with has no name (main.zig:18)
+  trim: ported, signature only, the body is still to write (parser.zig:4)
+  isComment: ported, signature and body (parser.zig:8)
+  sectionName: ported, signature only, the body is still to write (parser.zig:12)
+  parse: still to write, the error set it can fail with has no name (parser.zig:21)

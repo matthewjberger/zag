@@ -93,3 +93,14 @@ Changing the emitter changes every `expected` directory under `examples/`. Run
 A new example needs a directory that `zig build run` succeeds in, a module
 under `zag-facts/src/examples/`, a line in `examples.rs`, and a paragraph in
 `examples/README.md`. Tests fail while any of the four is missing.
+
+`corpus/` is the other half. Whole Zig projects written as ordinary programs,
+read through their build scripts, with no hand-built tables and so no check
+against the compiler. It exists because examples are written by the person
+writing the analysis and come out the shape the analysis expects: the most
+ordinary construction in Zig, a `deinit` freeing two fields, was in none of
+them until a bug in reading it was found by accident. A new project needs a
+directory that `zig build run` succeeds in, a paragraph in `corpus/README.md`,
+and `just corpus` run to write its `expected` directory. The ports there are
+checked in as they come out, defects included, and `corpus/README.md` lists
+what those currently are.
