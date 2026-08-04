@@ -289,6 +289,32 @@ fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
         else => {},
     }
 
+    // A struct literal in a body is the same shape as one in an initialiser,
+    // and both are how a Zig function returns a value it just built. The field
+    // values are emitted first so the reader has them before the literal that
+    // names them.
+    var init_buffer: [2]Ast.Node.Index = undefined;
+    if (isStructInit(tree.nodeTag(node))) {
+        if (tree.fullStructInit(&init_buffer, node)) |initializer| {
+            for (initializer.ast.fields) |field| try emitExpression(walker, field);
+            std.debug.print("expression {s} {d} kind=structliteral line={d} fields={d}\n", .{
+                walker.owner, raw, line, initializer.ast.fields.len,
+            });
+            for (initializer.ast.fields, 0..) |field, index| {
+                const value_first = tree.firstToken(field);
+                if (value_first < 2) continue;
+                std.debug.print("initfield {s} {d} {d} node={d} name={s}\n", .{
+                    walker.owner,
+                    raw,
+                    index,
+                    @intFromEnum(field),
+                    tree.tokenSlice(value_first - 2),
+                });
+            }
+            return;
+        }
+    }
+
     var call_buffer: [1]Ast.Node.Index = undefined;
     if (tree.fullCall(&call_buffer, node)) |call| {
         for (call.ast.params) |parameter| try emitExpression(walker, parameter);
