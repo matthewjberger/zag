@@ -229,14 +229,54 @@ The type a field gets is its Zig type crossed with its ownership class.
 | `[]const u8` | `static` | `&'static [u8]` |
 | `[]const u8` | `arena` | `&'bump [u8]` |
 | `[]const u8` | `unknown` | `Option<core::ptr::NonNull<[u8]>>` |
-| `*T` | `owned` | `Box<T>` |
-| `*T` | `borrowed` | `&'a T` |
+| `[]u8` | any | as `[]const u8`. Zig's mutability is not carried into the field type |
+| `*T`, `*const T` | `owned` | `Box<T>` |
+| `*T`, `*const T` | `borrowed` | `&'a T`, never `&'a mut T` |
+| `?*T` | `owned` | `Option<Box<T>>`, which is the same size as the Zig |
 | `?[]const u8` | `static` | `Option<&'static [u8]>` |
 | `?[]const u8` | `owned` | `Option<Box<[u8]>>` |
 | `[4]u32` | `value` | `[u32; 4]` |
 | `u8`, `u16`, `u32`, `u64` | `value` | `u8`, `u16`, `u32`, `u64` |
+| `f32`, `f64` | `value` | `f32`, `f64` |
 | `bool` | `value` | `bool` |
 | `void` | `value` | `()` |
+| an enum or union field | `value` | the ported enum |
+
+A borrowed pointer never becomes `&mut`, whatever the Zig wrote. Zig's `*T` is
+a mutable pointer and its `*const T` is the shared one, so the obvious mapping
+is `&'a mut T`. It is the wrong one. Rust's `&mut` is `noalias` and Zig's `*T`
+is not, so a field that this analysis calls borrowed may still be one of
+several live pointers to the same object, and `&mut` would make that undefined
+behaviour that compiles and passes its tests. The analysis answers who frees a
+thing, not how many pointers reach it, so it cannot tell the two apart and
+takes the shared reference every time.
+
+That is a deliberate under-approximation and it will not compile where the Zig
+did write through the pointer. Widening a field to `&mut` by hand is only safe
+once you have established that nothing else holds the same address, and that is
+a fact about the whole program which nothing here has checked.
+
+Two shapes have no row because they carry no length: `[*]T` and `[*:0]u8`. A
+many-item pointer is a raw pointer plus a length you have to find, and a
+sentinel pointer is one whose length is a scan away. Both need a person.
+
+An allocation with an alignment the Zig asked for, `[]align(16) u8` or anything
+from `allocator.alignedAlloc`, has no row either. `Box<[T]>` carries the
+alignment of `T` and nothing more, so a port that drops the request is one
+alignment fault away from a crash on a platform that cares. Check every
+`align(` in the Zig by hand.
+
+`owned` becomes `Box<[T]>`, and that is right only for a field whose length
+never changes after it is assigned. Zig reaches for `allocator.realloc` and
+`ArrayList` constantly, and a field that grows is a `Vec<T>`. The analysis does
+not yet tell the two apart: it sees the allocation and the free and says owned,
+and the emitter writes the boxed slice either way. So check every owned field
+for a later `realloc` or a stored `ArrayList` before you write against it,
+because the type will compile and then refuse to grow, and changing it
+afterwards is the one edit step 4 tells you not to make blind.
+
+`toOwnedSlice` shrinks to fit and `Vec` keeps its capacity, so swapping one for
+the other changes the memory profile of anything hot.
 
 An optional keeps its ownership wrapper inside itself. `?[]const u8` that is
 owned is an optional box, not a box of an optional, and the class is decided by
@@ -360,7 +400,7 @@ needs to release early, take ownership: `fn close(self)`.
 
 | Zig | Rust |
 |---|---|
-| `@intCast(x)` | `T::try_from(x)?` |
+| `@intCast(x)` | `T::try_from(x).unwrap()` |
 | `@truncate(x)` | `x as T` |
 | `@intFromEnum(e)` | `e as uN` |
 | `@memcpy(dst, src)` | `dst.copy_from_slice(src)` |
@@ -369,6 +409,13 @@ needs to release early, take ownership: `fn close(self)`.
 | `a -\| b` | `a.saturating_sub(b)` |
 | `std.mem.eql(u8, a, b)` | `a == b` |
 | `std.math.maxInt(T)` | `T::MAX` |
+
+`@intCast` does not return an error in Zig. It traps in Debug and ReleaseSafe
+and is undefined in ReleaseFast, so the port unwraps rather than propagating.
+Mapping it to `?` would invent an error the Zig never had and change the error
+set of whatever encloses it, which would mean a signature is not settled until
+its body is written. Where the trap is the wrong behaviour for your program,
+that is a decision to make deliberately and not one the port makes for you.
 
 Bare `as` is for `@truncate` only. Every narrowing conversion goes through
 `try_from`, because Zig traps where `as` silently wraps.
@@ -393,6 +440,39 @@ Any other packed struct becomes `#[repr(transparent)] struct Foo(uN)` with
 shift and mask accessors in the original field order. Do not reorder the
 fields, and do not let a plain `#[repr(C)]` stand in, because the bit layout is
 the contract.
+
+## Locks and atomics
+
+A Zig struct holding a `std.Thread.Mutex` beside the fields it guards is a
+structural change rather than a type substitution. Rust wants the lock to own
+what it protects, so the fields move inside a `Mutex<T>` and the struct keeps
+one field where it had several. Nothing here decides that for you, and a port
+that leaves the lock beside the data produces a type that is not `Send` and
+gives no reason why.
+
+The question it turns on, which fields are only touched while the lock is held,
+is the same shape of reachability question the deinit closure answers, so this
+is a gap rather than an impossibility.
+
+`@atomicRmw`, `@atomicLoad`, `@atomicStore`, and `@cmpxchgWeak` have no rows in
+the values table. Rust spells them as methods on `AtomicU32` and friends with
+an explicit `Ordering`, and Zig writes the ordering at the call site, so the
+translation is mechanical but the field type changes with it and nothing here
+does that.
+
+## Shared ownership
+
+`freed outside the deinit call closure` usually means one owner that the
+analysis could not see. Sometimes it means two, and there is no class for that:
+a field genuinely shared between owners is `unknown` here, which is the right
+answer in the sense that the port refuses to guess and the wrong one in the
+sense that a reader is told nothing about what to do.
+
+The rule against reaching for `Rc` is about intrusive structures, where a
+back-pointer is a pointer and not an owner. It is not about data two owners
+genuinely share. Where you have established that two owners really do share a
+lifetime, `Rc` or `Arc` is the port, and the thing to avoid is reaching for it
+because the borrow checker complained rather than because the program shares.
 
 ## What has no mechanical answer
 
@@ -432,3 +512,14 @@ stable, which matters when the name is observable.
 - No `String` or `&str` holds bytes that came from a file, a socket, or a
   syscall.
 - Field order matches the Zig, so the two can be read side by side.
+- No field points into another field of the same struct. Zig lets a struct hold
+  its own address and Rust moves structs freely, so a self-reference that
+  compiles is unsound the first time it moves. This is broader than the
+  `@fieldParentPtr` case and it is the one that survives every test.
+- Every owned field that is reallocated or grown is a `Vec`, not a `Box<[T]>`.
+- Every `defer` that is not a plain free has been accounted for. `Drop` covers
+  the frees; a `defer` that releases a lock, decrements a counter, or writes a
+  line is doing something else and disappears silently if you let it.
+- Every `align(` in the Zig has a matching alignment in the port.
+- No borrowed pointer was widened to `&mut` without establishing that nothing
+  else holds the same address.
