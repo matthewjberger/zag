@@ -1,10 +1,11 @@
 use crate::handles::{
-    AllocatorSourceId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId,
-    StringId, StructId, TypeId,
+    AllocatorSourceId, ArtifactId, CallId, ExpressionId, FieldId, FunctionId, MemoryOperationId,
+    ModuleId, StringId, StructId, TypeId,
 };
 use crate::tables::{
-    AllocatorSourceKind, AssignmentSource, ExpressionKind, MemoryOperationKind, PlaceKind,
-    ROOT_MODULE, Strings, Tables, TypeKind, module_count, string_bytes, string_count,
+    AllocatorSourceKind, ArtifactKind, AssignmentSource, ExpressionKind, MemoryOperationKind,
+    PlaceKind, ROOT_MODULE, Strings, Tables, TypeKind, artifact_count, module_count, string_bytes,
+    string_count,
 };
 
 /// Adds a Zig file to the program. The root is already there, so this is for
@@ -41,6 +42,23 @@ pub fn push_unresolved_import(tables: &mut Tables, owner: ModuleId, name: &[u8])
     if let Some(count) = tables.modules.unresolved_count.get_mut(owner.0 as usize) {
         *count += 1;
     }
+}
+
+/// Records something the build script asks for. `root` is `NO_INDEX` where the
+/// script named a file the crawl could not open, which is a hole in the build
+/// graph rather than a reason to leave the artifact out.
+pub fn declare_artifact(
+    tables: &mut Tables,
+    name: &[u8],
+    root: ModuleId,
+    kind: ArtifactKind,
+) -> ArtifactId {
+    let name = push_string(&mut tables.strings, name);
+    let artifacts = &mut tables.artifacts;
+    artifacts.name.push(name);
+    artifacts.root.push(root);
+    artifacts.kind.push(kind);
+    ArtifactId(artifact_count(artifacts) as u32 - 1)
 }
 
 pub fn set_type_module(tables: &mut Tables, kind: TypeId, module: ModuleId) {

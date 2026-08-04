@@ -79,7 +79,6 @@ fn tool_path(name: &str, source: &str) -> Result<std::path::PathBuf, String> {
 /// the private declarations reflection cannot see.
 pub(crate) fn ask_zig(path: &std::path::Path) -> Result<(String, String), String> {
     let reflect = tool_path("reflect", REFLECT_SOURCE)?;
-    let extract = tool_path("extract", EXTRACT_SOURCE)?;
     let reflection = run_zig(&[
         "build-obj".as_ref(),
         "-fno-emit-bin".as_ref(),
@@ -88,6 +87,14 @@ pub(crate) fn ask_zig(path: &std::path::Path) -> Result<(String, String), String
         format!("-Mroot={}", reflect.display()).as_ref(),
         format!("-Mtarget={}", path.display()).as_ref(),
     ])?;
+    Ok((parse_only(path)?, reflection))
+}
+
+/// The parser alone, for a file whose declarations are nobody's business. A
+/// build script is read for what it asks the compiler to produce rather than
+/// for types, so reflecting it would resolve `std.Build` for nothing.
+pub(crate) fn parse_only(path: &std::path::Path) -> Result<String, String> {
+    let extract = tool_path("extract", EXTRACT_SOURCE)?;
     let extraction = run_zig(&[
         "run".as_ref(),
         extract.as_ref(),
@@ -103,7 +110,7 @@ pub(crate) fn ask_zig(path: &std::path::Path) -> Result<(String, String), String
             path.display()
         ));
     }
-    Ok((extraction, reflection))
+    Ok(extraction)
 }
 
 /// One file, read on its own. `read_project` follows what it imports.

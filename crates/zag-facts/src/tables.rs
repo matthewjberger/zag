@@ -25,6 +25,33 @@ pub struct UnresolvedImports {
     pub name: Vec<StringId>,
 }
 
+/// What kind of thing the build graph asked for. A Zig test artifact is a
+/// program the same way an executable is, so it keeps a row rather than being
+/// folded into one.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ArtifactKind {
+    Executable = 0,
+    Library = 1,
+    Test = 2,
+}
+
+/// What the project's `build.zig` says it produces. Each artifact names a file
+/// it is rooted at, so a directory holding several programs is several
+/// artifacts over one set of modules rather than one program with several
+/// entry points.
+///
+/// A project read from a root file rather than from a build script has no
+/// artifacts, because the file it was pointed at is the whole answer.
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct Artifacts {
+    pub name: Vec<StringId>,
+    /// The module the artifact is rooted at, or `NO_INDEX` where the build
+    /// script named a file the crawl could not open.
+    pub root: Vec<ModuleId>,
+    pub kind: Vec<ArtifactKind>,
+}
+
 pub const TYPE_FLAG_SIGNED: u32 = 1 << 0;
 
 pub const STRUCT_FLAG_EXTERN: u32 = 1 << 0;
@@ -279,6 +306,7 @@ pub struct Tables {
     pub strings: Strings,
     pub modules: Modules,
     pub unresolved_imports: UnresolvedImports,
+    pub artifacts: Artifacts,
     pub types: Types,
     pub structs: Structs,
     pub fields: Fields,
@@ -305,6 +333,7 @@ pub fn empty_tables() -> Tables {
             unresolved_count: vec![0],
         },
         unresolved_imports: UnresolvedImports::default(),
+        artifacts: Artifacts::default(),
         types: Types::default(),
         structs: Structs::default(),
         fields: Fields::default(),
@@ -342,6 +371,10 @@ pub fn type_count(types: &Types) -> usize {
 
 pub fn module_count(modules: &Modules) -> usize {
     modules.name.len()
+}
+
+pub fn artifact_count(artifacts: &Artifacts) -> usize {
+    artifacts.name.len()
 }
 
 /// Whether the program is more than one Zig file. A program that is one file

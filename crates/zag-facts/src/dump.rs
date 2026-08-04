@@ -10,9 +10,9 @@
 
 use crate::handles::{FunctionId, ModuleId, NO_INDEX, StringId, StructId, TypeId};
 use crate::tables::{
-    AllocatorSourceKind, AssignmentSource, ContainerKind, ExpressionKind, MemoryOperationKind,
-    PlaceKind, Tables, TypeKind, call_count, field_count, function_count, memory_operation_count,
-    module_count, string_bytes, struct_count, type_count,
+    AllocatorSourceKind, ArtifactKind, AssignmentSource, ContainerKind, ExpressionKind,
+    MemoryOperationKind, PlaceKind, Tables, TypeKind, artifact_count, call_count, field_count,
+    function_count, memory_operation_count, module_count, string_bytes, struct_count, type_count,
 };
 
 fn text(tables: &Tables, id: StringId) -> String {
@@ -51,6 +51,14 @@ fn module_name(tables: &Tables, module: ModuleId) -> String {
         }
         Some(_) => "root".to_string(),
         None => handle(module.0),
+    }
+}
+
+fn artifact_kind(kind: ArtifactKind) -> &'static str {
+    match kind {
+        ArtifactKind::Executable => "executable",
+        ArtifactKind::Library => "library",
+        ArtifactKind::Test => "test",
     }
 }
 
@@ -185,6 +193,25 @@ fn dump_modules(out: &mut String, tables: &Tables) {
                 &name,
             ],
         );
+    }
+    for row in 0..artifact_count(&tables.artifacts) {
+        let name = tables
+            .artifacts
+            .name
+            .get(row)
+            .map(|name| text(tables, *name))
+            .unwrap_or_default();
+        let root = match tables.artifacts.root.get(row) {
+            Some(root) if root.0 != NO_INDEX => module_name(tables, *root),
+            _ => "-".to_string(),
+        };
+        let kind = tables
+            .artifacts
+            .kind
+            .get(row)
+            .map(|kind| artifact_kind(*kind))
+            .unwrap_or("-");
+        line(out, &["artifact ", &name, " kind=", kind, " root=", &root]);
     }
 }
 

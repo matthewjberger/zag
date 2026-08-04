@@ -10,6 +10,7 @@ macro_rules! handle {
 
 handle!(StringId);
 handle!(ModuleId);
+handle!(ArtifactId);
 handle!(TypeId);
 handle!(StructId);
 handle!(FieldId);

@@ -213,6 +213,32 @@ when it is included somewhere else.
 | `modules: N` followed by a path per file | nothing, this is what was read |
 | `unresolved import: <text>` | find what it names and point zag at it, because the analysis never saw those declarations |
 
+## Artifacts
+
+Pointed at a project directory or a `build.zig` rather than at one file, `zag
+read` reads the build graph and starts from every file an artifact is rooted
+at. That is the difference between porting the program you happened to name and
+porting the repository, and it matters for the same reason modules do: two
+executables that share a module share whatever that module owns.
+
+There is no root file then, so nothing sits at the top level and every file is
+a named module. Each executable becomes a binary under `src/bin`, named what
+the build script named it, calling the `main` its root module ported. All of
+them are one Cargo package, because they share every module they import and a
+workspace would mean copying those modules into each one.
+
+| report line | what to do |
+|---|---|
+| `executable <name>: <path>` | nothing, this is what the build script asked for |
+| `library <name>: <path>` | nothing, though the port makes one library of everything rather than one per artifact |
+| `test <name>: <path>` | port it as a test rather than a binary, which is a judgement the layout does not make for you |
+| `<kind> <name>: the build script names a root source file the crawl could not open` | the script computes its root path rather than writing it, so find what it resolves to and read that file directly |
+
+A build script that builds its artifact list in a loop, or names its root
+source files through a variable, says nothing this can read by spelling. It
+gets no artifacts rather than wrong ones, and `zag read` on the root file is
+the way through.
+
 An unresolved import is an import that named neither a file the crawl could
 open nor a module the project declares. Every ownership decision below it in
 the report was made without whatever that import brought in, so treat them the

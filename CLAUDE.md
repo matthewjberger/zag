@@ -40,7 +40,11 @@ which is what `zag read` runs. `zag read` takes a root file and follows
 Zig file becomes a module, the root file keeps the top level, and a program of
 one file has no module tree at all. Modules arrive root first and then sorted
 by path, and handles are handed out in that order, which is what makes the
-merge deterministic. `zag` is the driver. `zag-verify` exists only to compile
+merge deterministic. Given a directory or a `build.zig` it reads the build
+graph instead, crawls from every artifact root, and records one artifact row
+per thing the script installs. There is no root file then, so the top level
+module is empty and every file is named, and the port gets a binary per
+executable rather than a crate per executable. `zag` is the driver. `zag-verify` exists only to compile
 the checked in ports so their layout assertions run during `cargo build`, and
 `crates/zag/tests/compilation.rs` does the same to freshly generated ones so a
 broken emitter fails before anything is regenerated.

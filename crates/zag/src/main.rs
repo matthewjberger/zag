@@ -19,8 +19,10 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
-    /// Reads a Zig program with the compiler and writes its fact file. The
-    /// path is the root file, and everything it imports is read with it.
+    /// Reads a Zig project with the compiler and writes its fact file. The
+    /// path is a root file, whose imports are read with it, or a build.zig or
+    /// the directory holding one, whose artifacts are each read from their own
+    /// root.
     Read {
         #[arg(long)]
         zig: PathBuf,
@@ -88,8 +90,8 @@ fn run(arguments: Arguments) -> Result<(), String> {
             output,
             target,
         } => {
-            let modules = zag::read_project(&zig)?;
-            let tables = zag_frontend::build_project(&modules, &target);
+            let project = zag::read_project(&zig)?;
+            let tables = zag_frontend::build_project(&project, &target);
             write(&output, &zag_facts::wire::encode(&tables))
         }
         Command::Dump { facts } => {
@@ -111,16 +113,21 @@ fn run(arguments: Arguments) -> Result<(), String> {
                 write(&into.join(&file.path), &file.contents)?;
             }
             write(&into.join("port.report.txt"), &output.report)?;
-            println!(
-                "{} {} into {}",
+            let crates = format!(
+                "{} {}",
                 port.crates.len(),
-                if port.crates.len() == 1 {
-                    "crate"
-                } else {
-                    "crates"
-                },
-                into.display()
+                plural(port.crates.len(), "crate", "crates")
             );
+            let binaries = if port.binaries.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " and {} {}",
+                    port.binaries.len(),
+                    plural(port.binaries.len(), "binary", "binaries")
+                )
+            };
+            println!("{crates}{binaries} into {}", into.display());
             Ok(())
         }
         Command::Emit {
@@ -135,6 +142,10 @@ fn run(arguments: Arguments) -> Result<(), String> {
             write(&report, &output.report)
         }
     }
+}
+
+fn plural(count: usize, one: &'static str, many: &'static str) -> &'static str {
+    if count == 1 { one } else { many }
 }
 
 fn write(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {

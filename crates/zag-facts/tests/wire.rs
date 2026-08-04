@@ -93,13 +93,13 @@ fn an_unknown_enumeration_value_is_rejected() {
 
 /// Walks the header and every column ahead of the type table, so a column
 /// added in front of it moves this rather than silently pointing at the wrong
-/// one. The six that precede it are the module table and its unresolved
-/// imports, in the order `encode` writes them.
+/// one. The nine that precede it are the module table, its unresolved imports,
+/// and the artifacts, in the order `encode` writes them.
 fn find_first_type_kind_offset(bytes: &[u8]) -> usize {
     let mut cursor = MAGIC.len() + 4 + 4;
     let string_byte_count = read_length(bytes, cursor);
     cursor += 4 + string_byte_count;
-    for _ in 0..7 {
+    for _ in 0..10 {
         let count = read_length(bytes, cursor);
         cursor += 4 + count * 4;
     }

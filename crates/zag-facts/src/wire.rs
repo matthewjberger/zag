@@ -8,7 +8,7 @@ use crate::tables::{
 };
 
 pub const MAGIC: [u8; 8] = *b"ZAGFACT\x00";
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodeError {
@@ -116,6 +116,19 @@ fn container_kind_from_raw(value: u32) -> Result<crate::tables::ContainerKind, D
     }
 }
 
+fn artifact_kind_from_raw(value: u32) -> Result<crate::tables::ArtifactKind, DecodeError> {
+    use crate::tables::ArtifactKind;
+    match value {
+        0 => Ok(ArtifactKind::Executable),
+        1 => Ok(ArtifactKind::Library),
+        2 => Ok(ArtifactKind::Test),
+        other => Err(DecodeError::UnknownEnumValue {
+            column: "artifacts.kind",
+            value: other,
+        }),
+    }
+}
+
 fn allocator_source_kind_from_raw(value: u32) -> Result<AllocatorSourceKind, DecodeError> {
     match value {
         0 => Ok(AllocatorSourceKind::Global),
@@ -211,6 +224,11 @@ fn encode_modules(out: &mut Vec<u8>, tables: &Tables) {
     let unresolved = &tables.unresolved_imports;
     write_u32_column(out, &raw_from(&unresolved.owner, |value| value.0));
     write_u32_column(out, &raw_from(&unresolved.name, |value| value.0));
+
+    let artifacts = &tables.artifacts;
+    write_u32_column(out, &raw_from(&artifacts.name, |value| value.0));
+    write_u32_column(out, &raw_from(&artifacts.root, |value| value.0));
+    write_u32_column(out, &raw_from(&artifacts.kind, |value| *value as u32));
 }
 
 fn encode_types(out: &mut Vec<u8>, tables: &Tables) {
@@ -359,6 +377,17 @@ fn decode_modules(
         .into_iter()
         .map(StringId)
         .collect();
+
+    let artifacts = &mut tables.artifacts;
+    artifacts.name = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(StringId)
+        .collect();
+    artifacts.root = read_u32_column(bytes, cursor)?
+        .into_iter()
+        .map(ModuleId)
+        .collect();
+    artifacts.kind = map_raw(read_u32_column(bytes, cursor)?, artifact_kind_from_raw)?;
     Ok(())
 }
 

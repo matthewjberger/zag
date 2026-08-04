@@ -104,10 +104,11 @@ port name:
     @echo "=== target/{{name}}.report.txt ==="
     @cat target/{{name}}.report.txt
 
-# Ports a Zig file the repository knows nothing about. `just read path/to.zig`
+# Ports Zig the repository knows nothing about. `just read path/to.zig`
 #
-# Reads it with the compiler, builds fact tables from what it finds, and prints
-# the Rust and the report. Needs zig on PATH.
+# The path is a root file, a build.zig, or the directory one sits in. Reads it
+# with the compiler, builds fact tables from what it finds, and prints the Rust
+# and the report. Needs zig on PATH.
 read file:
     @cargo run -q -p zag -- read --zig {{file}} --output target/read.facts
     @cargo run -q -p zag -- emit --facts target/read.facts --source target/read.rs --report target/read.report.txt

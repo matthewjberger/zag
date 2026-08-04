@@ -1,7 +1,7 @@
 use crate::handles::NO_INDEX;
 use crate::tables::{
-    Tables, call_count, field_count, function_count, memory_operation_count, module_count,
-    parameter_count, string_count, struct_count, type_count,
+    Tables, artifact_count, call_count, field_count, function_count, memory_operation_count,
+    module_count, parameter_count, string_count, struct_count, type_count,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,6 +117,11 @@ fn check_column_lengths(tables: &Tables, violations: &mut Vec<Violation>) {
         tables.unresolved_imports.owner.len(),
         tables.unresolved_imports.name.len(),
     );
+
+    let artifacts = &tables.artifacts;
+    let count = artifact_count(artifacts);
+    expect_length(violations, "artifacts", "root", count, artifacts.root.len());
+    expect_length(violations, "artifacts", "kind", count, artifacts.kind.len());
 
     let types = &tables.types;
     let count = type_count(types);
@@ -577,6 +582,24 @@ fn check_type_handles(tables: &Tables, violations: &mut Vec<Violation>, limits: 
         |value| value.0,
         limits.strings,
         false,
+    );
+    check_column(
+        violations,
+        "artifacts",
+        "name",
+        &tables.artifacts.name,
+        |value| value.0,
+        limits.strings,
+        false,
+    );
+    check_column(
+        violations,
+        "artifacts",
+        "root",
+        &tables.artifacts.root,
+        |value| value.0,
+        limits.modules,
+        true,
     );
     check_column(
         violations,

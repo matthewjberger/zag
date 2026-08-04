@@ -142,9 +142,9 @@ fn scale() -> usize {
 /// One module per struct, each importing the one before it and naming its type
 /// across the boundary, which is the shape that makes every name resolution a
 /// cross-module lookup rather than a local one.
-fn synthetic_project(modules: usize) -> Vec<zag_frontend::project::SourceModule> {
+fn synthetic_project(modules: usize) -> zag_frontend::project::Project {
     use zag_frontend::program::{Container, Function, Member, Parameter, Program};
-    (0..modules)
+    let built: Vec<zag_frontend::project::SourceModule> = (0..modules)
         .map(|index| {
             let previous = index.saturating_sub(1);
             let declared = if index == 0 {
@@ -189,7 +189,11 @@ fn synthetic_project(modules: usize) -> Vec<zag_frontend::project::SourceModule>
             },
             unresolved: Vec::new(),
         })
-        .collect()
+        .collect();
+    zag_frontend::project::Project {
+        modules: built,
+        artifacts: Vec::new(),
+    }
 }
 
 #[test]

@@ -456,13 +456,67 @@ fn write_functions(out: &mut Vec<u8>, tables: &Tables, ownership: &Ownership) {
 /// Which files the program was read from, and which `@import` reached nothing.
 /// An unresolved import means declarations the analysis never saw, so it is
 /// said out loud rather than left for a reader to notice from what is missing.
+fn write_artifacts(out: &mut Vec<u8>, tables: &Tables) {
+    let count = zag_facts::tables::artifact_count(&tables.artifacts);
+    if count == 0 {
+        return;
+    }
+    write_line(out, &[b"artifacts: ", count.to_string().as_bytes()]);
+    for row in 0..count {
+        let name = tables
+            .artifacts
+            .name
+            .get(row)
+            .map(|name| string_bytes(&tables.strings, *name))
+            .unwrap_or(b"");
+        let kind = match tables.artifacts.kind.get(row) {
+            Some(zag_facts::tables::ArtifactKind::Executable) => &b"executable"[..],
+            Some(zag_facts::tables::ArtifactKind::Library) => b"library",
+            Some(zag_facts::tables::ArtifactKind::Test) => b"test",
+            None => b"unknown",
+        };
+        let root = tables
+            .artifacts
+            .root
+            .get(row)
+            .filter(|root| root.0 != zag_facts::NO_INDEX)
+            .and_then(|root| tables.modules.path.get(root.0 as usize))
+            .map(|path| string_bytes(&tables.strings, *path));
+        match root {
+            Some(path) => write_line(out, &[b"  ", kind, b" ", name, b": ", path]),
+            None => write_line(
+                out,
+                &[
+                    b"  ",
+                    kind,
+                    b" ",
+                    name,
+                    b": the build script names a root source file the crawl could not open",
+                ],
+            ),
+        }
+    }
+}
+
 fn write_modules(out: &mut Vec<u8>, tables: &Tables) {
+    write_artifacts(out, tables);
     let count = zag_facts::tables::module_count(&tables.modules);
     if count <= 1 && tables.unresolved_imports.owner.is_empty() {
         return;
     }
-    write_line(out, &[b"modules: ", count.to_string().as_bytes()]);
-    for index in 0..count {
+    // A project read through its build script has no root file, so the top
+    // level namespace is an empty module with nothing to say about itself.
+    let listed: Vec<usize> = (0..count)
+        .filter(|index| {
+            tables
+                .modules
+                .path
+                .get(*index)
+                .is_some_and(|path| !string_bytes(&tables.strings, *path).is_empty())
+        })
+        .collect();
+    write_line(out, &[b"modules: ", listed.len().to_string().as_bytes()]);
+    for index in listed {
         let path = tables
             .modules
             .path

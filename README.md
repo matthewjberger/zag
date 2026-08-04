@@ -27,6 +27,7 @@ git clone https://github.com/matthewjberger/zag
 cd zag
 
 just read path/to.zig   # port a Zig program from its root file, and print it
+just read path/to/proj  # or from a whole project, through its build.zig
 just names              # the example programs
 just port netpacket     # port one of them
 just dump netpacket     # print its fact tables as text
@@ -94,9 +95,12 @@ wrong guess produces a port that compiles and leaks.
 
 So the unit of work is the program. `zag read` takes a root file and follows
 `@import` from it, so the fact database covers every file the program is made
-of rather than the one it was pointed at. The pipeline builds that database
-first, runs whole-program passes over it, and only then emits Rust, with each
-decision carrying the evidence that produced it.
+of rather than the one it was pointed at. Given a project directory instead, it
+reads `build.zig` first and starts from every file an artifact is rooted at, so
+a repository that builds several programs is read as several programs over one
+set of modules. The pipeline builds that database first, runs whole-program
+passes over it, and only then emits Rust, with each decision carrying the
+evidence that produced it.
 
 ```
 Buffer.data
@@ -193,6 +197,11 @@ crate root declaring each module, and a file per module. A Zig package the
 crawl could not read is a crate the port needs and does not have, so a program
 that names one becomes a workspace with a place for it and the dependency
 already wired.
+
+Several Zig executables are not several crates. They share every module they
+import, so they become one package with a binary each, named what the build
+script named them. A workspace would mean copying the shared modules into every
+binary or inventing a crate the Zig never had.
 
 Both read syntax rather than semantics. `x.dupe(...)` is an allocation because
 of how it is spelled, not because `x` resolved to an allocator, so a program

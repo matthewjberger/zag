@@ -4,13 +4,13 @@ pub mod project;
 use program::{Function, Layout, Program};
 use std::collections::BTreeMap;
 use zag_facts::build::{
-    declare_field, declare_function, declare_module, declare_parameter, intern, name_root_module,
-    push_allocator_source, push_array_type, push_body_expression, push_call, push_call_argument,
-    push_expression, push_field_assignment_at, push_integer_type, push_memory_operation,
-    push_opaque_type, push_optional_type, push_pointer_type, push_slice_type, push_string,
-    push_struct, push_struct_type, push_unresolved_import, set_expression_line, set_function_body,
-    set_function_line, set_function_module, set_function_signature, set_struct_deinit,
-    set_struct_kind, set_struct_module, set_type_module,
+    declare_artifact, declare_field, declare_function, declare_module, declare_parameter, intern,
+    name_root_module, push_allocator_source, push_array_type, push_body_expression, push_call,
+    push_call_argument, push_expression, push_field_assignment_at, push_integer_type,
+    push_memory_operation, push_opaque_type, push_optional_type, push_pointer_type,
+    push_slice_type, push_string, push_struct, push_struct_type, push_unresolved_import,
+    set_expression_line, set_function_body, set_function_line, set_function_module,
+    set_function_signature, set_struct_deinit, set_struct_kind, set_struct_module, set_type_module,
 };
 use zag_facts::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId, NO_INDEX, StringId, StructId,
@@ -442,7 +442,8 @@ pub fn build(program: &Program, target: &str) -> Tables {
 /// Containers are declared for every module before any member is, because a
 /// field in one module can name a type in another and the type has to exist
 /// before the field that mentions it.
-pub fn build_project(modules: &[project::SourceModule], target: &str) -> Tables {
+pub fn build_project(project: &project::Project, target: &str) -> Tables {
+    let modules = &project.modules;
     let mut tables = empty_tables();
     tables.target = intern(&mut tables.strings, target.as_bytes());
 
@@ -464,6 +465,14 @@ pub fn build_project(modules: &[project::SourceModule], target: &str) -> Tables 
         for text in &module.unresolved {
             push_unresolved_import(&mut tables, *handle, text.as_bytes());
         }
+    }
+    for artifact in &project.artifacts {
+        let root = artifact
+            .root
+            .as_deref()
+            .and_then(|name| by_name.get(name).copied())
+            .unwrap_or(ModuleId(NO_INDEX));
+        declare_artifact(&mut tables, artifact.name.as_bytes(), root, artifact.kind);
     }
 
     let imports: Vec<Vec<(String, ModuleId)>> = modules

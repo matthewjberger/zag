@@ -28,9 +28,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # zag-verify compiles the checked in fixture output, so the layout
-      # assertions the emitter wrote are checked by the build itself. A layout
-      # that only holds on one target fails on the other two.
+      # zag-verify compiles the checked in ports, so the layout assertions the
+      # emitter wrote are checked by the build itself. A layout that only holds
+      # on one target fails on the other two.
       - run: cargo test --workspace
 
   fmt:
@@ -56,8 +56,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --all-targets -- -D warnings
 
-  fixture:
-    name: Fixture is not stale
+  regenerated:
+    name: Checked in ports are not stale
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -65,15 +65,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The test suite already compares the library pipeline against
-      # fixtures/expected. This runs the same thing through the binary, so the
+      # The test suite already compares the library pipeline against every
+      # expected directory. This runs the same thing through the binary, so the
       # command line path cannot drift away from the library path unnoticed.
       - uses: extractions/setup-just@v2
-      - run: just fixture
-      - run: cargo run -q -p zag -- emit --facts target/example.facts --source fixtures/expected/example.rs --report fixtures/expected/example.report.txt
       - run: just examples
       - name: The pipeline output matches what is checked in
-        run: git diff --exit-code fixtures/expected examples
+        run: git diff --exit-code examples
 
   examples:
     name: Example programs build on their own
