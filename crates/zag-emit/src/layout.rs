@@ -102,9 +102,13 @@ fn manifest(name: &str, dependencies: &[String], standalone: bool) -> String {
         }
         out.push('\n');
     }
-    // The port is index based and has nothing to gain from raw pointers, the
-    // same reason the tool that wrote it forbids them.
-    out.push_str("[lints.rust]\nunsafe_code = \"forbid\"\n");
+    // Denied rather than forbidden. Most of a port needs no `unsafe`, and saying
+    // so is worth a lint, but a field the analysis left `unknown` comes across
+    // as a raw pointer that cannot be read without one. `forbid` cannot be
+    // relaxed by an attribute, so it would make finishing the port mean editing
+    // the manifest that was written for you, and the lint level of the ported
+    // program is the reader's decision rather than this tool's.
+    out.push_str("[lints.rust]\nunsafe_code = \"deny\"\n");
     out
 }
 

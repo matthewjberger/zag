@@ -67,6 +67,12 @@ Buffer.data
 An `unknown` field compiles and carries no ownership. Leaving one in a finished
 port means the port has a pointer nobody owns.
 
+`zag build` writes `unsafe_code = "deny"` into the manifest rather than
+`forbid`, because reading one of those pointers needs an `unsafe` block and
+`forbid` cannot be relaxed by an attribute. Settling the field is the answer,
+and `#[allow(unsafe_code)]` on the one item that needs it is the escape while
+you are getting there. The lint level of the ported program is yours to set.
+
 ### Confidence
 
 | confidence | what to do |

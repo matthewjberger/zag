@@ -105,7 +105,22 @@ fn the_declarations_the_single_file_carries_are_all_in_the_crate() {
 fn a_lone_crate_is_not_taken_for_a_member_of_whatever_surrounds_it() {
     let manifest = contents(&laid_out("ledger"), "Cargo.toml");
     assert!(manifest.starts_with("[workspace]"), "{manifest}");
-    assert!(manifest.contains("unsafe_code = \"forbid\""), "{manifest}");
+}
+
+/// The lint level of the ported program is the reader's decision. Most of a
+/// port needs no `unsafe` and the lint says so, but a field the analysis left
+/// `unknown` comes across as a raw pointer, and reading one needs unsafe.
+/// `forbid` cannot be relaxed by an attribute, so forbidding it here would mean
+/// finishing the port starts with editing the manifest zag wrote.
+#[test]
+fn the_generated_manifest_denies_unsafe_rather_than_forbidding_it() {
+    let files = laid_out("coverage");
+    let manifest = contents(&files, "Cargo.toml");
+    assert!(manifest.contains("unsafe_code = \"deny\""), "{manifest}");
+    assert!(!manifest.contains("forbid"), "{manifest}");
+    // The reason it has to be relaxable, in the same port.
+    let source = contents(&files, "src/lib.rs");
+    assert!(source.contains("core::ptr::NonNull"), "{source}");
 }
 
 /// A Zig package the crawl could not read is a crate the port needs and does
