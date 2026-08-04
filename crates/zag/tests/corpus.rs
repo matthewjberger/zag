@@ -7,10 +7,11 @@
 //! pass arrives as a diff somebody has to read.
 //!
 //! These are ordinary programs rather than programs shaped to suit the
-//! analysis, which is the point. What they surface is written down in
-//! `corpus/README.md`, including the parts that come out wrong.
+//! analysis, which is the point. The port of each one is handed to rustc,
+//! because a transpiler whose output does not compile has not finished.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -122,6 +123,49 @@ fn reading_a_project_twice_ports_the_same_way() {
         };
         assert_eq!(first.source, second.source, "{name}");
         assert_eq!(first.report, second.report, "{name}");
+    }
+}
+
+/// Metadata is the only thing emitted, so there is no code generation and no
+/// linking, but constants are still evaluated, which is what turns the layout
+/// assertions the emitter wrote into part of the check.
+fn compiles(path: &Path, directory: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(directory).map_err(|cause| format!("{cause}"))?;
+    let output = Command::new("rustc")
+        .arg("--edition")
+        .arg("2024")
+        .arg("--crate-type")
+        .arg("lib")
+        .arg("--emit")
+        .arg("metadata")
+        .arg("--out-dir")
+        .arg(directory)
+        .arg(path)
+        .output()
+        .map_err(|cause| format!("running rustc: {cause}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(String::from_utf8_lossy(&output.stderr).into_owned())
+}
+
+/// The whole claim. A port that does not compile is a port nobody can start
+/// from, and every refusal the passes make is there so this holds.
+#[test]
+fn every_port_compiles() {
+    let directory = workspace_root().join("target").join("corpus-rustc");
+    for name in names() {
+        let port = workspace_root()
+            .join("corpus")
+            .join(&name)
+            .join("expected")
+            .join("port.rs");
+        if let Err(complaint) = compiles(&port, &directory) {
+            panic!(
+                "{name}: the port does not compile
+{complaint}"
+            );
+        }
     }
 }
 

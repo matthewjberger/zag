@@ -254,6 +254,9 @@ fn refusal_text(refusal: crate::function::Refusal) -> &'static [u8] {
         Refusal::ReturnBorrowsAnArena => {
             b"still to write, what it returns borrows from an arena the port drops"
         }
+        Refusal::ReturnBorrowsFromNothingPassedIn => {
+            b"still to write, what it returns borrows and nothing was passed in to borrow from"
+        }
         Refusal::ReturnBorrowsWithNothingToTieItTo => {
             b"still to write, what it returns borrows and no parameter can carry the lifetime"
         }

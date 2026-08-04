@@ -133,6 +133,7 @@ The report ends with what became of every function.
 | `still to write, the error set it can fail with has no name` | give the Zig a named error set, or decide the Rust error type yourself |
 | `still to write, what it returns borrows from an arena the port drops` | decide who owns the result, since the arena does not survive the port |
 | `still to write, what it returns borrows and no parameter can carry the lifetime` | decide what the result borrows from and put it in the signature |
+| `still to write, what it returns borrows and nothing was passed in to borrow from` | it returns a slice and takes no reference of its own. Return an owned value, or take the buffer it reads from as an argument |
 
 Where an `init` produced no constructor, the line under it says which field
 stopped it.

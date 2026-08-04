@@ -309,6 +309,18 @@ fn optional(line: &str, key: &str) -> Option<u32> {
         .and_then(|text| text.parse().ok())
 }
 
+/// The type on a reflection `field` line. It may contain spaces, and unlike
+/// every other reader here it is not written last, so it runs to the size that
+/// follows it rather than to the end of the line.
+fn reflected_type(line: &str) -> Option<&str> {
+    let start = line.find(" type=")? + " type=".len();
+    let rest = line.get(start..)?;
+    Some(match rest.find(" size=") {
+        Some(end) => &rest[..end],
+        None => rest,
+    })
+}
+
 pub fn parse_reflection(text: &str, program: &mut Program) {
     for line in text.lines() {
         let mut parts = line.split_whitespace();
@@ -334,6 +346,22 @@ pub fn parse_reflection(text: &str, program: &mut Program) {
                     .find(|(layout, _)| layout == owner)
                 {
                     entry.1.offsets.push((name.to_string(), offset));
+                }
+                // The compiler resolved this and the parser only read it, so
+                // where both have an answer the compiler's wins. That is what
+                // turns `[stack_size]T` into `[32]T`, and a parser reading the
+                // text has no way to reach the constant.
+                if let Some(declared) = reflected_type(line)
+                    && let Some(container) = program
+                        .containers
+                        .iter_mut()
+                        .find(|container| container.name == owner)
+                    && let Some(member) = container
+                        .members
+                        .iter_mut()
+                        .find(|member| member.name == name)
+                {
+                    member.declared = declared.to_string();
                 }
             }
             _ => {}

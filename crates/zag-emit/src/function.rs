@@ -168,7 +168,11 @@ fn lower_parameter(
     push_node(ast, NodeKind::Parameter, name, absent(), 0, 0, &[kind])
 }
 
-fn error_set_name(tables: &Tables, function: FunctionId) -> Option<Vec<u8>> {
+/// The error set a function can fail with, spelled the way this module has to
+/// reach it. A set declared in another file needs the path to that file the
+/// same as any other type, and a bare name compiles only where it happens to
+/// have been declared.
+fn error_set_name(tables: &Tables, lowering: Lowering, function: FunctionId) -> Option<Vec<u8>> {
     let set = tables
         .functions
         .error_set
@@ -176,7 +180,16 @@ fn error_set_name(tables: &Tables, function: FunctionId) -> Option<Vec<u8>> {
         .copied()
         .filter(|set| set.0 != NO_INDEX)?;
     let text = name_of(tables, tables.structs.name.get(set.0 as usize));
-    (!text.is_empty()).then_some(text)
+    if text.is_empty() {
+        return None;
+    }
+    let kind = tables
+        .structs
+        .type_id
+        .get(set.0 as usize)
+        .copied()
+        .unwrap_or(TypeId(NO_INDEX));
+    Some(crate::lower::qualify_name(tables, lowering, kind, &text))
 }
 
 /// Why a function got no signature. Each one is a different thing to go and
@@ -194,6 +207,9 @@ pub enum Refusal {
     /// What it returns borrows, and nothing in the signature can carry the
     /// lifetime that borrow needs.
     ReturnBorrowsWithNothingToTieItTo,
+    /// It returns a slice or a pointer and takes no reference of its own, so
+    /// there is no lifetime for Rust to elide from.
+    ReturnBorrowsFromNothingPassedIn,
 }
 
 /// Whether the port can spell what the function gives back, and where it
@@ -216,8 +232,17 @@ pub fn signature_refusal(
         .flags
         .get(index)
         .is_some_and(|flags| flags & FUNCTION_FLAG_FALLIBLE != 0);
-    if fallible && error_set_name(tables, function).is_none() {
+    if fallible && error_set_name(tables, lowering, function).is_none() {
         return Some(Refusal::UnnamedErrorSet);
+    }
+    // A slice or a pointer comes back as a reference, and Rust takes the
+    // lifetime from an argument. A function with no reference argument has
+    // none to take, and the Zig said nothing about where the memory came from.
+    if is_reference_type(&tables.types, returns)
+        && receiver_row(tables, function).is_none()
+        && !has_reference_parameter(tables, function)
+    {
+        return Some(Refusal::ReturnBorrowsFromNothingPassedIn);
     }
     let declared = lifetimes_to_declare(tables, lowering, ownership, function);
     if declared & STRUCT_FLAG_ARENA_LIFETIME != 0 {
@@ -229,6 +254,55 @@ pub fn signature_refusal(
         return Some(Refusal::ReturnBorrowsWithNothingToTieItTo);
     }
     None
+}
+
+/// What the function gives back, with the borrow written where Rust puts it.
+///
+/// A returned slice is a borrow and the type body of a slice is unsized on its
+/// own, so it needs the reference. The reference goes inside the option for the
+/// same reason a field's does: `Option<&[T]>` is a pointer that may be null and
+/// `&Option<[T]>` is a reference to something with no size. The refusal above
+/// is what guarantees there is a lifetime to elide from by the time this runs.
+fn lower_borrowed_return(
+    ast: &mut Ast,
+    tables: &Tables,
+    lowering: Lowering,
+    kind: TypeId,
+    depth: u32,
+) -> NodeId {
+    if depth < 8
+        && tables.types.kind.get(kind.0 as usize) == Some(&zag_facts::tables::TypeKind::Optional)
+    {
+        let element = tables
+            .types
+            .element
+            .get(kind.0 as usize)
+            .copied()
+            .unwrap_or(TypeId(NO_INDEX));
+        let inner = lower_borrowed_return(ast, tables, lowering, element, depth + 1);
+        return push_node(
+            ast,
+            NodeKind::TypeOption,
+            absent(),
+            absent(),
+            0,
+            0,
+            &[inner],
+        );
+    }
+    let body = lower_type_body(ast, tables, lowering, kind, 0);
+    if !is_reference_type(&tables.types, kind) {
+        return body;
+    }
+    push_node(
+        ast,
+        NodeKind::TypeReference,
+        absent(),
+        absent(),
+        0,
+        Lifetime::Elided as u32,
+        &[body],
+    )
 }
 
 fn lower_return_type(
@@ -243,8 +317,8 @@ fn lower_return_type(
         .get(function.0 as usize)
         .copied()
         .unwrap_or(TypeId(NO_INDEX));
-    let body = lower_type_body(ast, tables, lowering, returns, 0);
-    let Some(text) = error_set_name(tables, function) else {
+    let body = lower_borrowed_return(ast, tables, lowering, returns, 0);
+    let Some(text) = error_set_name(tables, lowering, function) else {
         return body;
     };
     let name = push_string(&mut ast.strings, &text);

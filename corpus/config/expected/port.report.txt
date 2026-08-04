@@ -50,11 +50,11 @@ Error.EmptyKey
 
 functions: 9
   Document.deinit: ported, signature only, the body is still to write (document.zig:24)
-  Document.lookup: ported, signature and body (document.zig:29)
-  Document.count: ported, signature and body (document.zig:38)
+  Document.lookup: ported, signature only, the body is still to write (document.zig:29)
+  Document.count: ported, signature only, the body is still to write (document.zig:38)
   Document.sectionSize: ported, signature only, the body is still to write (document.zig:42)
   main: still to write, the error set it can fail with has no name (main.zig:18)
   trim: ported, signature only, the body is still to write (parser.zig:4)
-  isComment: ported, signature and body (parser.zig:8)
+  isComment: ported, signature only, the body is still to write (parser.zig:8)
   sectionName: ported, signature only, the body is still to write (parser.zig:12)
   parse: still to write, the error set it can fail with has no name (parser.zig:21)

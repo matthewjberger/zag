@@ -14,16 +14,13 @@ pub mod document {
         pub fn deinit(&mut self) {
             todo!()
         }
-        pub fn lookup(&self, section: &[u8], key: &[u8]) -> Option<[u8]> {
-            for entry in self.entries {
-                if entry.section == section && entry.key == key {
-                    entry.value
-                }
-            }
-            null
+        pub fn lookup(&self, section: &[u8], key: &[u8]) -> Option<&[u8]> {
+            let _ = section;
+            let _ = key;
+            todo!()
         }
         pub fn count(&self) -> u32 {
-            self.entries.len.try_into().unwrap()
+            todo!()
         }
         pub fn section_size(&self, section: &[u8]) -> u32 {
             let _ = section;
@@ -39,16 +36,17 @@ pub mod document {
 }
 
 pub mod parser {
-    pub fn trim(text: &[u8]) -> [u8] {
+    pub fn trim(text: &[u8]) -> &[u8] {
         let _ = text;
         todo!()
     }
 
     pub fn is_comment(line: &[u8]) -> bool {
-        line.len == 0 || line[0] == '#' || line[0] == ';'
+        let _ = line;
+        todo!()
     }
 
-    pub fn section_name(line: &[u8]) -> Result<[u8], Error> {
+    pub fn section_name(line: &[u8]) -> Result<&[u8], super::document::Error> {
         let _ = line;
         todo!()
     }

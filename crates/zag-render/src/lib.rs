@@ -432,6 +432,12 @@ fn render_expression(
             out.extend_from_slice(text_of(ast, node));
             Ok(())
         }
+        NodeKind::ExpressionAs => {
+            render_expression(out, ast, only_child(ast, node)?, depth)?;
+            out.extend_from_slice(b" as ");
+            out.extend_from_slice(text_of(ast, node));
+            Ok(())
+        }
         NodeKind::ExpressionIndex => {
             let children = node_children(ast, node);
             if children.len() != 2 {

@@ -73,7 +73,7 @@ pub fn lowering<'a>(
 /// reaches it. The path is relative rather than rooted at the crate on
 /// purpose: the port is checked by including it inside another module, and a
 /// `crate::` path would break the moment it moved.
-fn qualify(tables: &Tables, lowering: Lowering, kind: TypeId, name: &[u8]) -> Vec<u8> {
+pub fn qualify_name(tables: &Tables, lowering: Lowering, kind: TypeId, name: &[u8]) -> Vec<u8> {
     let owner = tables
         .types
         .module
@@ -187,7 +187,7 @@ pub fn lower_type_body(
             if text.is_empty() {
                 return unit_type(ast);
             }
-            let text = qualify(tables, lowering, kind, &text);
+            let text = qualify_name(tables, lowering, kind, &text);
             let name = push_string(&mut ast.strings, &text);
             let carried = lowering.lifetimes.get(index).copied().unwrap_or(0);
             push_node(ast, NodeKind::TypePath, name, absent(), 0, carried, &[])

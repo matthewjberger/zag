@@ -64,6 +64,8 @@ pub enum NodeKind {
     ExpressionArm = 43,
     /// Owned with a length that moves, which a boxed slice cannot carry.
     TypeVec = 44,
+    /// A cast, the type in `text` and the value as the only child.
+    ExpressionAs = 45,
 }
 
 #[repr(u32)]

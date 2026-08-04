@@ -46,6 +46,18 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
     let Some(kind) = kind_of(tables, expression) else {
         return false;
     };
+    // A body expression carries no resolved type, so these two need one the
+    // reader does not have. `null` is `None` only once something says what it
+    // is null of, and everything on the way out of the function would have to
+    // be wrapped to match. `.len` is a length on a slice and a field access on
+    // anything else, and Rust spells the first as a call.
+    let text = text_of(tables, expression);
+    if matches!(kind, ExpressionKind::Field) && text == b"len" {
+        return false;
+    }
+    if text == b"null" {
+        return false;
+    }
     if !matches!(
         kind,
         ExpressionKind::Identifier

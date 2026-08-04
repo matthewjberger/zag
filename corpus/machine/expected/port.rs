@@ -1,6 +1,6 @@
 pub mod main {
     pub struct Machine {
-        pub stack: super::opcode::Value,
+        pub stack: [super::opcode::Value; 32],
         pub depth: u32,
         pub steps: u32,
     }
@@ -9,23 +9,20 @@ pub mod main {
         pub fn init() -> Machine {
             todo!()
         }
-        pub fn push(&mut self, value: super::opcode::Value) -> Result<(), Fault> {
+        pub fn push(&mut self, value: super::opcode::Value) -> Result<(), super::opcode::Fault> {
             let _ = value;
             todo!()
         }
-        pub fn pop(&mut self) -> Result<super::opcode::Value, Fault> {
+        pub fn pop(&mut self) -> Result<super::opcode::Value, super::opcode::Fault> {
             todo!()
         }
-        pub fn pop_number(&mut self) -> Result<i64, Fault> {
+        pub fn pop_number(&mut self) -> Result<i64, super::opcode::Fault> {
             todo!()
         }
         pub fn top(&self) -> Option<super::opcode::Value> {
-            if self.depth == 0 {
-                null
-            }
-            self.stack[self.depth - 1]
+            todo!()
         }
-        pub fn run(&mut self, program: &[super::opcode::Instruction]) -> Result<i64, Fault> {
+        pub fn run(&mut self, program: &[super::opcode::Instruction]) -> Result<i64, super::opcode::Fault> {
             let _ = program;
             todo!()
         }
@@ -70,18 +67,5 @@ pub mod opcode {
     pub fn plain(op: Op) -> Instruction {
         let _ = op;
         todo!()
-    }
-
-    pub fn describe(op: Op) -> [u8] {
-        match op {
-            Op::Push => "push",
-            Op::Add => "add",
-            Op::Subtract => "subtract",
-            Op::Multiply => "multiply",
-            Op::Duplicate => "duplicate",
-            Op::Drop => "drop",
-            Op::JumpIfZero => "jump_if_zero",
-            Op::Halt => "halt",
-        }
     }
 }

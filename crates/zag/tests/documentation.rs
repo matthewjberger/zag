@@ -297,6 +297,7 @@ fn every_disposition() -> Vec<zag_emit::report::Disposition> {
         Disposition::NotPorted(Refusal::UnnamedErrorSet),
         Disposition::NotPorted(Refusal::ReturnBorrowsAnArena),
         Disposition::NotPorted(Refusal::ReturnBorrowsWithNothingToTieItTo),
+        Disposition::NotPorted(Refusal::ReturnBorrowsFromNothingPassedIn),
     ];
     for outcome in &all {
         match outcome {
@@ -308,7 +309,8 @@ fn every_disposition() -> Vec<zag_emit::report::Disposition> {
                 Refusal::ReturnTypeUnresolved
                 | Refusal::UnnamedErrorSet
                 | Refusal::ReturnBorrowsAnArena
-                | Refusal::ReturnBorrowsWithNothingToTieItTo => {}
+                | Refusal::ReturnBorrowsWithNothingToTieItTo
+                | Refusal::ReturnBorrowsFromNothingPassedIn => {}
             },
         }
     }

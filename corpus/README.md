@@ -41,25 +41,33 @@ every generation. It covers two owned fields freed by one `deinit`, an
 allocation with no source to copy from, signed and unsigned index arithmetic
 through `@intCast`, and nested `while` loops.
 
-## What they currently surface
+## What they surface
 
-These are ordinary programs, so they reach shapes the pipeline gets wrong. The
-output is checked in as it is rather than as it should be, because a defect
-recorded in a file somebody reads is worth more than one nobody has written
-down.
+Every port here compiles. That is the claim the suite makes and the reason the
+refusals below exist: a shape the passes cannot spell correctly is left as
+`todo!()` rather than written wrong, so what comes out is a skeleton somebody
+can start from rather than a file they have to fix before it will build.
 
-- A fixed array whose length is a named constant loses its length and becomes
-  the element type. `stack: [stack_size]opcode.Value` ports as
-  `super::opcode::Value`. The length is parsed as a literal, so an identifier
-  falls through to the element.
-- `null` in a function body ports as `null` rather than `None`, and a value
-  returned into an optional is not wrapped in `Some`. The constructor path
-  handles both and the body path does not.
-- An error set named across a module boundary is spelled unqualified, so
-  `Fault` should be `super::opcode::Fault`.
-- A `*T` parameter that is not the receiver comes across as `&T`. The receiver
-  itself becomes `&mut self` when the Zig said `*T`, so the same pointer is
-  read two ways depending on where it sits in the signature.
+These programs are what found the following, none of it visible from
+`examples/`.
 
-None of these are visible from `examples/`, which is the argument for this
-directory.
+- A field's type came from the parser reading the source text, so
+  `[stack_size]opcode.Value` lost its length and became the element type.
+  Reflection had the compiler's answer, `[32]opcode.Value`, and was only being
+  read for offsets. It now supplies the type as well.
+- An error set named across a module boundary was spelled unqualified, so
+  `Fault` compiled only in the file that declared it.
+- A function returning a slice returned the slice body, which has no size.
+  It now returns a reference, with the borrow inside the option where the
+  return is optional, and a function with no reference argument to elide from
+  is refused instead.
+- Zig indexes with any integer and Rust indexes with `usize`, so the cast is
+  now part of the translation.
+
+Two shapes are refused rather than ported, because a body expression carries no
+resolved type and both need one. `null` is `None` only once something says what
+it is null of, and everything on the way out of the function would have to be
+wrapped to match. `.len` is a length on a slice and a field access on anything
+else, and Rust spells the first as a call. Both are cases the report names, and
+both are the kind of gap that closes when the frontend can ask the compiler
+what a body expression is rather than reading its spelling.
