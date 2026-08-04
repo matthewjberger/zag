@@ -51,7 +51,7 @@ anything this repository provides:
 cd examples/wordcount && zig build run
 ```
 
-`wordcount` is owned memory whose free is a call away from `deinit`.
+`wordcount` is owned memory, two fields of it, freed a call away from `deinit`.
 `tokenizer` separates borrowed, arena, and static lifetimes inside one struct.
 `netpacket` is an `extern struct` whose layout the port has to preserve.
 `shapes` covers the containers that are not structs: an enum, a tagged union,

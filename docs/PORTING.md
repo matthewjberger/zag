@@ -34,7 +34,7 @@ tokenizer` ports one and prints what came out.
 
 | example | what it shows |
 |---|---|
-| `wordcount` | `owned`, where the free is a call away from `deinit` |
+| `wordcount` | `owned`, where two fields are freed a call away from `deinit` |
 | `tokenizer` | `borrowed`, `arena`, and `static` separated inside one struct |
 | `netpacket` | an `extern struct` and the layout assertions its port carries |
 | `conflict` | an allocator two callers disagree about, which ports to nothing usable |

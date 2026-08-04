@@ -22,10 +22,11 @@ pub fn tables() -> Tables {
     let allocator_name = intern(&mut tables.strings, b"Allocator");
     let allocator = push_opaque_type(&mut tables, allocator_name);
 
-    let counts = declare_struct(&mut tables, b"Counts", 24, 8, 0);
+    let counts = declare_struct(&mut tables, b"Counts", 40, 8, 0);
     let counts_text = declare_field(&mut tables, counts, b"text", text, 0);
-    let counts_words = declare_field(&mut tables, counts, b"words", word, 16);
-    let counts_lines = declare_field(&mut tables, counts, b"lines", word, 20);
+    let counts_name = declare_field(&mut tables, counts, b"name", text, 16);
+    let counts_words = declare_field(&mut tables, counts, b"words", word, 32);
+    let counts_lines = declare_field(&mut tables, counts, b"lines", word, 36);
     let counts_type = struct_type(&tables, counts);
     let counts_pointer = push_pointer_type(&mut tables, counts_type);
 
@@ -37,6 +38,7 @@ pub fn tables() -> Tables {
         allocator,
         PARAMETER_FLAG_ALLOCATOR,
     );
+    declare_parameter(&mut tables, initialize, b"name", text, 0);
     declare_parameter(&mut tables, initialize, b"input", text, 0);
 
     let deinitialize = declare_function(&mut tables, b"deinit", counts);
@@ -86,10 +88,10 @@ pub fn tables() -> Tables {
     set_function_signature(&mut tables, release, void, StructId(NO_INDEX), false);
     set_function_signature(&mut tables, main, void, StructId(NO_INDEX), true);
     for (function, line) in [
-        (initialize, 9),
-        (deinitialize, 31),
-        (release, 36),
-        (main, 40),
+        (initialize, 10),
+        (deinitialize, 33),
+        (release, 38),
+        (main, 43),
     ] {
         set_function_line(&mut tables, function, line);
     }
@@ -114,47 +116,52 @@ pub fn tables() -> Tables {
     let call = push_call(&mut tables, main, deinitialize);
     push_call_argument(&mut tables, call, 1, page);
 
-    let allocate = push_memory_operation(
-        &mut tables,
-        initialize,
-        MemoryOperationKind::Allocate,
-        initialize_allocator,
-        PlaceKind::FieldOfParameter,
-        counts_text,
-    );
-    push_memory_operation(
-        &mut tables,
-        release,
-        MemoryOperationKind::Free,
-        release_allocator,
-        PlaceKind::FieldOfParameter,
-        counts_text,
-    );
-    // `text` is the copy the allocation makes. `words` and `lines` are set
-    // from locals a loop filled, which the port cannot read, so each carries
-    // the Zig it could not spell rather than nothing at all.
-    let copied = push_expression(
-        &mut tables,
-        ExpressionKind::Allocation,
-        StringId(NO_INDEX),
-        1,
-        text,
-        FieldId(NO_INDEX),
-        &[],
-    );
-    set_expression_line(&mut tables, copied, 23);
-    push_field_assignment_at(
-        &mut tables,
-        counts_text,
-        initialize,
-        AssignmentSource::Allocation,
-        allocate,
-        copied,
-        23,
-    );
+    // Two owned fields freed by one function, which is the ordinary shape and
+    // the one where an argument belonging to the wrong call costs a field its
+    // ownership without anything else changing.
+    for (field, parameter, line) in [(counts_text, 2u32, 24u32), (counts_name, 1, 25)] {
+        let allocate = push_memory_operation(
+            &mut tables,
+            initialize,
+            MemoryOperationKind::Allocate,
+            initialize_allocator,
+            PlaceKind::FieldOfParameter,
+            field,
+        );
+        push_memory_operation(
+            &mut tables,
+            release,
+            MemoryOperationKind::Free,
+            release_allocator,
+            PlaceKind::FieldOfParameter,
+            field,
+        );
+        let copied = push_expression(
+            &mut tables,
+            ExpressionKind::Allocation,
+            StringId(NO_INDEX),
+            parameter,
+            text,
+            FieldId(NO_INDEX),
+            &[],
+        );
+        set_expression_line(&mut tables, copied, line);
+        push_field_assignment_at(
+            &mut tables,
+            field,
+            initialize,
+            AssignmentSource::Allocation,
+            allocate,
+            copied,
+            line,
+        );
+    }
+    // `words` and `lines` are set from locals a loop filled, which the port
+    // cannot read, so each carries the Zig it could not spell rather than
+    // nothing at all.
     for (field, name, line) in [
-        (counts_words, b"words".as_slice(), 24),
-        (counts_lines, b"lines".as_slice(), 25),
+        (counts_words, b"words".as_slice(), 26),
+        (counts_lines, b"lines".as_slice(), 27),
     ] {
         let spelled = push_string(&mut tables.strings, name);
         let unreadable = push_expression(

@@ -71,11 +71,16 @@ what each line means and what to do about it.
 
 ## What each one is for
 
-`wordcount` is the flagship case for owned memory. `Counts.text` is allocated
-from the global allocator and freed by `release`, which `deinit` calls rather
-than doing the work itself. Deciding that the field is owned therefore needs
-the call graph, and no rule that reads one function at a time gets it right.
-The port is `Box<[u8]>` and the Zig `deinit` disappears into `Drop`.
+`wordcount` is the flagship case for owned memory. `Counts.text` and
+`Counts.name` are both allocated from the global allocator and both freed by
+`release`, which `deinit` calls rather than doing the work itself. Deciding
+either field is owned therefore needs the call graph, and no rule that reads
+one function at a time gets it right. Both port to `Box<[u8]>` and the Zig
+`deinit` disappears into `Drop`.
+
+Two fields freed by one function is also the ordinary shape, and it is the one
+that catches a reader handing every argument to the first call it recognises,
+which costs the second field its owner and nothing else.
 
 `tokenizer` splits three lifetimes apart in one struct. `Document.source`
 belongs to the caller and comes back as `&'a [u8]`, `Document.tokens` and

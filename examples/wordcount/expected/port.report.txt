@@ -1,8 +1,15 @@
 zag ownership report
 target: x86_64-linux
-fields: 3
+fields: 4
 
 Counts.text
+  class: owned
+  confidence: high
+  evidence: freed inside the deinit call closure (release)
+  evidence: assigned from an allocation (init)
+  evidence: allocator resolves to the global allocator
+
+Counts.name
   class: owned
   confidence: high
   evidence: freed inside the deinit call closure (release)
@@ -18,8 +25,8 @@ Counts.lines
   confidence: high
 
 functions: 4
-  Counts.init: still to write, the error set it can fail with has no name (main.zig:9)
-    no constructor: words is set from words, which the port cannot spell (main.zig:24)
-  Counts.deinit: disappears, Drop frees what it freed (main.zig:31)
-  release: disappears, Drop frees what it freed (main.zig:36)
-  main: still to write, the error set it can fail with has no name (main.zig:40)
+  Counts.init: still to write, the error set it can fail with has no name (main.zig:10)
+    no constructor: words is set from words, which the port cannot spell (main.zig:26)
+  Counts.deinit: disappears, Drop frees what it freed (main.zig:33)
+  release: disappears, Drop frees what it freed (main.zig:38)
+  main: still to write, the error set it can fail with has no name (main.zig:43)

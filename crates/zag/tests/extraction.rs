@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use zag_facts::examples::{NAMES, tables_for};
 use zag_facts::tables::{
-    AssignmentSource, MemoryOperationKind, Tables, function_count, string_bytes,
+    AssignmentSource, MemoryOperationKind, PlaceKind, Tables, function_count, string_bytes,
 };
 
 const ALLOCATING: [&str; 6] = [
@@ -39,6 +39,11 @@ fn workspace_root() -> PathBuf {
 struct Extraction {
     functions: BTreeSet<String>,
     calls: BTreeSet<(String, String)>,
+    /// Every field a free call names, as the function doing the freeing, what
+    /// it was reached through, and the field. Kept per occurrence rather than
+    /// as a set, because a function freeing two fields is exactly the case
+    /// worth checking.
+    freed: Vec<(String, String, String)>,
     initialisers: Vec<(String, String, String)>,
     parameters: BTreeSet<(String, String)>,
 }
@@ -80,6 +85,28 @@ fn parse(text: &str) -> Extraction {
                     extraction
                         .calls
                         .insert((subject.to_string(), callee.to_string()));
+                }
+            }
+            // `argument <fn>|<callee>|<index> text=<x>.<field>`. Only the
+            // first argument of a freeing call says what was freed.
+            "argument" => {
+                let mut pieces = subject.split('|');
+                let (Some(owner), Some(callee), Some("0")) =
+                    (pieces.next(), pieces.next(), pieces.next())
+                else {
+                    continue;
+                };
+                if !FREEING.contains(&last_segment(callee)) {
+                    continue;
+                }
+                if let Some(text) = value_of(line, "text")
+                    && let Some((holder, field)) = text.trim().rsplit_once('.')
+                {
+                    extraction.freed.push((
+                        owner.to_string(),
+                        holder.to_string(),
+                        field.to_string(),
+                    ));
                 }
             }
             "initialiser" => {
@@ -241,6 +268,56 @@ fn every_memory_operation_in_the_tables_happens_in_the_program() {
             assert!(
                 calls_in(&extraction, &owner, verbs),
                 "{name}: the tables say {owner} should {description} and it never does"
+            );
+        }
+    }
+}
+
+/// The other direction. `every_memory_operation_in_the_tables_happens_in_the
+/// _program` checks that nothing in the tables was invented, and on its own it
+/// says nothing about what the tables left out. A free the parser reported and
+/// the tables never recorded is a field that silently loses its owner.
+///
+/// Only a free reached through one of the function's own parameters counts. A
+/// free of a field of a local is a free the frontend cannot attribute to any
+/// field, and the tables say so by recording it with no field at all.
+#[test]
+fn every_free_the_parser_found_through_a_parameter_reaches_the_tables() {
+    for name in runnable_names() {
+        let Some(extraction) = extract(name) else {
+            continue;
+        };
+        let tables = tables_for(name).expect("registered");
+        let recorded: Vec<(String, String)> = (0..tables.memory_operations.function.len())
+            .filter(|row| {
+                tables.memory_operations.kind[*row] == MemoryOperationKind::Free
+                    && tables.memory_operations.place[*row] == PlaceKind::FieldOfParameter
+            })
+            .filter_map(|row| {
+                let owner =
+                    function_name(&tables, tables.memory_operations.function[row].0 as usize);
+                let field = tables.memory_operations.place_field[row];
+                let field = tables.fields.name.get(field.0 as usize)?;
+                Some((owner, text_of(&tables, *field)))
+            })
+            .collect();
+        for (owner, holder, field) in &extraction.freed {
+            if !extraction
+                .parameters
+                .contains(&(owner.clone(), holder.clone()))
+            {
+                continue;
+            }
+            let wanted = (owner.clone(), field.clone());
+            let written = extraction
+                .freed
+                .iter()
+                .filter(|(from, through, what)| (from, what) == (owner, field) && through == holder)
+                .count();
+            let found = recorded.iter().filter(|entry| **entry == wanted).count();
+            assert!(
+                found >= written,
+                "{name}: {owner} frees {holder}.{field} {written} time(s) and the tables record it {found}"
             );
         }
     }
