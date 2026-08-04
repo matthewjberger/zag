@@ -101,6 +101,9 @@ pub struct Node {
     /// node its body is. The pattern is text because what a bare `.red` means
     /// depends on the type being switched on.
     pub arms: Vec<Arm>,
+    /// One entry per field of a struct literal: the field's name and the node
+    /// its value is.
+    pub fields: Vec<(String, u32)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -267,6 +270,7 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     otherwise: optional(line, "otherwise"),
                     mutable: number(line, "mutable") != 0,
                     arms: Vec::new(),
+                    fields: Vec::new(),
                     operands: Vec::new(),
                 };
                 if let Some(function) = function_mut(program, subject) {
@@ -297,6 +301,21 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     && let Some(node) = function.nodes.iter_mut().find(|node| node.node == owner)
                 {
                     node.arms.push(entry);
+                }
+            }
+            // `initfield <fn> <literal> <index> node=<value> name=<field>`, so
+            // the literal it belongs to is the second word the same way an arm
+            // finds its switch.
+            "initfield" => {
+                let owner = node_identifier(line);
+                let entry = (
+                    value(line, "name").unwrap_or("-").to_string(),
+                    number(line, "node"),
+                );
+                if let Some(function) = function_mut(program, subject)
+                    && let Some(node) = function.nodes.iter_mut().find(|node| node.node == owner)
+                {
+                    node.fields.push(entry);
                 }
             }
             "step" => {

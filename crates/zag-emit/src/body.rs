@@ -55,7 +55,11 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
     if matches!(kind, ExpressionKind::Field) && text == b"len" {
         return false;
     }
-    if text == b"null" {
+    // `null` needs to know what it is null of, and everything on the way out
+    // would have to be wrapped to match. `undefined` is uninitialised memory,
+    // which Rust has no safe spelling for at all. The constructor already
+    // refuses both, and a body is no different.
+    if text == b"null" || text == b"undefined" {
         return false;
     }
     // Zig coerces a bare numeric literal to whatever the parameter is. Where
@@ -93,6 +97,7 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
             | ExpressionKind::Call
             | ExpressionKind::Match
             | ExpressionKind::Arm
+            | ExpressionKind::StructLiteral
     ) {
         return false;
     }
@@ -126,6 +131,51 @@ fn lower_expression(
         }
         ExpressionKind::Literal => {
             push_node(ast, NodeKind::ExpressionLiteral, name, absent(), 0, 0, &[])
+        }
+        // The field it fills is on the row, so a member of a literal prints as
+        // the field it names, and the literal itself prints as the struct the
+        // signature said the function returns.
+        ExpressionKind::StructLiteral => {
+            let field = tables
+                .expressions
+                .field
+                .get(expression.0 as usize)
+                .copied()
+                .unwrap_or(zag_facts::FieldId(zag_facts::NO_INDEX));
+            if field.0 != zag_facts::NO_INDEX {
+                let text = crate::lower::name_of(tables, tables.fields.name.get(field.0 as usize));
+                let name = push_string(&mut ast.strings, &text);
+                return Some(push_node(
+                    ast,
+                    NodeKind::FieldValue,
+                    name,
+                    absent(),
+                    0,
+                    0,
+                    &lowered,
+                ));
+            }
+            let result = tables
+                .expressions
+                .result
+                .get(expression.0 as usize)
+                .copied()
+                .unwrap_or(zag_facts::TypeId(zag_facts::NO_INDEX));
+            let text = crate::lower::name_of(tables, tables.types.name.get(result.0 as usize));
+            if text.is_empty() {
+                return None;
+            }
+            let text = crate::lower::qualify_name(tables, lowering, result, &text);
+            let name = push_string(&mut ast.strings, &text);
+            push_node(
+                ast,
+                NodeKind::ExpressionStruct,
+                name,
+                absent(),
+                0,
+                0,
+                &lowered,
+            )
         }
         ExpressionKind::Field => push_node(
             ast,

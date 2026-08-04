@@ -65,7 +65,9 @@ pub mod opcode {
     }
 
     pub fn plain(op: Op) -> Instruction {
-        let _ = op;
-        todo!()
+        Instruction {
+            op,
+            operand: 0,
+        }
     }
 }

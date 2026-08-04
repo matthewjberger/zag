@@ -39,6 +39,7 @@ pub struct Cache {
 }
 
 pub fn make_view<'a>(bytes: &'a [u8]) -> View<'a> {
-    let _ = bytes;
-    todo!()
+    View {
+        bytes,
+    }
 }

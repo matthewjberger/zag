@@ -53,5 +53,5 @@ functions: 8
   makeBuffer: still to write, the error set it can fail with has no name (main.zig:35)
   parseNode: still to write, the error set it can fail with has no name (main.zig:50)
   parseTree: still to write, the error set it can fail with has no name (main.zig:59)
-  makeView: ported, signature only, the body is still to write (main.zig:68)
+  makeView: ported, signature and body (main.zig:68)
   main: still to write, the error set it can fail with has no name (main.zig:78)

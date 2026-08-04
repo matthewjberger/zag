@@ -1045,6 +1045,7 @@ fn declare_body(
     if function.body.is_empty() {
         return;
     }
+    let returns = returned_struct(tables, built_names, scope, handle);
     let mut built: Vec<(u32, ExpressionId)> = Vec::new();
     for node in &function.nodes {
         let owner = scrutinee_container(
@@ -1056,7 +1057,7 @@ fn declare_body(
             &function.nodes,
             node.left,
         );
-        let expression = translate_node(tables, built_names, scope, node, &built, owner);
+        let expression = translate_node(tables, built_names, scope, node, &built, owner, returns);
         built.push((node.node, expression));
     }
     let statements: Vec<ExpressionId> = function
@@ -1285,6 +1286,25 @@ fn builtin_method(name: &str) -> Option<(&'static str, usize)> {
     }
 }
 
+/// The struct a `return .{ ... }` is building, which is the one the function
+/// says it gives back. A body expression carries no type, but this one does not
+/// need to be inferred: the signature already wrote it down.
+fn returned_struct(
+    tables: &Tables,
+    built: &Built,
+    scope: &Scope,
+    handle: FunctionId,
+) -> Option<StructId> {
+    let returns = tables.functions.returns.get(handle.0 as usize).copied()?;
+    let name = tables.types.name.get(returns.0 as usize).copied()?;
+    if name.0 == NO_INDEX {
+        return None;
+    }
+    let text = String::from_utf8_lossy(zag_facts::tables::string_bytes(&tables.strings, name))
+        .into_owned();
+    look_up(&built.structs, scope, &text)
+}
+
 fn translate_node(
     tables: &mut Tables,
     built_names: &Built,
@@ -1292,6 +1312,7 @@ fn translate_node(
     node: &program::Node,
     built: &[(u32, ExpressionId)],
     owner: Option<StructId>,
+    returns: Option<StructId>,
 ) -> ExpressionId {
     let left = built_child(built, node.left);
     let right = built_child(built, node.right);
@@ -1317,6 +1338,61 @@ fn translate_node(
         "literal" => {
             let text = spelled(tables);
             push_body_expression(tables, ExpressionKind::Literal, text, node.line, &[])
+        }
+        // Each field becomes a literal of its own carrying the field it fills,
+        // and the whole thing carries the struct being built. The same shape a
+        // constructor is written from, so the emitter needs no second way to
+        // print one.
+        "structliteral" => {
+            let Some(container) = returns else {
+                return unsupported(tables);
+            };
+            let kind = tables
+                .structs
+                .type_id
+                .get(container.0 as usize)
+                .copied()
+                .unwrap_or(TypeId(NO_INDEX));
+            let mut children = Vec::new();
+            for (name, value) in &node.fields {
+                let Some(value) = built_child(built, Some(*value)) else {
+                    return unsupported(tables);
+                };
+                let Some(field) = zag_facts::tables::struct_fields(&tables.structs, container)
+                    .find(|row| {
+                        zag_facts::tables::string_bytes(&tables.strings, tables.fields.name[*row])
+                            == name.as_bytes()
+                    })
+                    .map(|row| FieldId(row as u32))
+                else {
+                    return unsupported(tables);
+                };
+                let entry = push_expression(
+                    tables,
+                    ExpressionKind::StructLiteral,
+                    StringId(NO_INDEX),
+                    NO_INDEX,
+                    TypeId(NO_INDEX),
+                    field,
+                    &[value],
+                );
+                set_expression_line(tables, entry, node.line);
+                children.push(entry);
+            }
+            if children.len() != node.fields.len() || children.is_empty() {
+                return unsupported(tables);
+            }
+            let expression = push_expression(
+                tables,
+                ExpressionKind::StructLiteral,
+                StringId(NO_INDEX),
+                NO_INDEX,
+                kind,
+                FieldId(NO_INDEX),
+                &children,
+            );
+            set_expression_line(tables, expression, node.line);
+            expression
         }
         "field" => match left {
             Some(left) => {

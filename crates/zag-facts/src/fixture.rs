@@ -1,9 +1,10 @@
 use crate::build::{
-    intern, name_root_module, push_allocator_source, push_call, push_call_argument,
-    push_expression, push_field, push_field_assignment_at, push_function, push_integer_type,
-    push_memory_operation, push_opaque_type, push_parameter, push_pointer_type, push_slice_type,
-    push_string, push_struct, push_struct_type, push_void_type, set_expression_line,
-    set_function_line, set_function_signature, set_struct_deinit,
+    intern, name_root_module, push_allocator_source, push_body_expression, push_call,
+    push_call_argument, push_expression, push_field, push_field_assignment_at, push_function,
+    push_integer_type, push_memory_operation, push_opaque_type, push_parameter, push_pointer_type,
+    push_slice_type, push_string, push_struct, push_struct_type, push_void_type,
+    set_expression_line, set_function_body, set_function_line, set_function_signature,
+    set_struct_deinit,
 };
 use crate::handles::{FieldId, FunctionId, MemoryOperationId, NO_INDEX, StructId, TypeId};
 use crate::tables::{
@@ -377,6 +378,49 @@ fn push_fixture_flow(
         borrowed,
         69,
     );
+
+    // `return .{ .bytes = bytes };`, which is the whole body. The literal
+    // carries the struct it builds and each member carries the field it fills,
+    // the same shape a constructor is written from.
+    let named = push_string(&mut tables.strings, b"bytes");
+    let read = push_expression(
+        tables,
+        crate::tables::ExpressionKind::Identifier,
+        named,
+        crate::handles::NO_INDEX,
+        TypeId(NO_INDEX),
+        FieldId(NO_INDEX),
+        &[],
+    );
+    set_expression_line(tables, read, 69);
+    let member = push_expression(
+        tables,
+        crate::tables::ExpressionKind::StructLiteral,
+        crate::handles::StringId(NO_INDEX),
+        crate::handles::NO_INDEX,
+        TypeId(NO_INDEX),
+        structs.view_bytes,
+        &[read],
+    );
+    set_expression_line(tables, member, 69);
+    let literal = push_expression(
+        tables,
+        crate::tables::ExpressionKind::StructLiteral,
+        crate::handles::StringId(NO_INDEX),
+        crate::handles::NO_INDEX,
+        types.view,
+        FieldId(NO_INDEX),
+        &[member],
+    );
+    set_expression_line(tables, literal, 69);
+    let body = push_body_expression(
+        tables,
+        crate::tables::ExpressionKind::Block,
+        crate::handles::StringId(NO_INDEX),
+        69,
+        &[literal],
+    );
+    set_function_body(tables, functions.make_view, body);
 }
 
 fn allocation(

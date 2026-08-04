@@ -71,7 +71,12 @@ pub mod image {
 
     impl Image {
         pub fn header(&self) -> Header {
-            todo!()
+            Header {
+                magic: 0x5036,
+                width: self.width.try_into().unwrap(),
+                height: self.height.try_into().unwrap(),
+                depth: 255,
+            }
         }
         pub fn offset(&self, column: u32, row: u32) -> u32 {
             row * self.width + column
@@ -143,27 +148,42 @@ pub mod vector {
 
     impl Vector {
         pub fn add(self, other: Vector) -> Vector {
-            let _ = other;
-            todo!()
+            Vector {
+                x: self.x + other.x,
+                y: self.y + other.y,
+                z: self.z + other.z,
+            }
         }
         pub fn subtract(self, other: Vector) -> Vector {
-            let _ = other;
-            todo!()
+            Vector {
+                x: self.x - other.x,
+                y: self.y - other.y,
+                z: self.z - other.z,
+            }
         }
         pub fn scale(self, factor: f32) -> Vector {
-            let _ = factor;
-            todo!()
+            Vector {
+                x: self.x * factor,
+                y: self.y * factor,
+                z: self.z * factor,
+            }
         }
         pub fn multiply(self, other: Vector) -> Vector {
-            let _ = other;
-            todo!()
+            Vector {
+                x: self.x * other.x,
+                y: self.y * other.y,
+                z: self.z * other.z,
+            }
         }
         pub fn dot(self, other: Vector) -> f32 {
             self.x * other.x + self.y * other.y + self.z * other.z
         }
         pub fn cross(self, other: Vector) -> Vector {
-            let _ = other;
-            todo!()
+            Vector {
+                x: self.y * other.z - self.z * other.y,
+                y: self.z * other.x - self.x * other.z,
+                z: self.x * other.y - self.y * other.x,
+            }
         }
         pub fn length_squared(self) -> f32 {
             todo!()
@@ -175,7 +195,11 @@ pub mod vector {
             todo!()
         }
         pub fn negate(self) -> Vector {
-            todo!()
+            Vector {
+                x: -self.x,
+                y: -self.y,
+                z: -self.z,
+            }
         }
     }
 
@@ -192,8 +216,11 @@ pub mod vector {
     }
 
     pub fn splat(value: f32) -> Vector {
-        let _ = value;
-        todo!()
+        Vector {
+            x: value,
+            y: value,
+            z: value,
+        }
     }
 
     pub fn origin() -> Vector {

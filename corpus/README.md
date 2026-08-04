@@ -100,7 +100,12 @@ integer and stops. The callee resolves, though, so the parameter it lands on
 says which was meant, and the frontend widens the literal there. The same trick
 does not reach a method call, which resolves no callee.
 
-The biggest remaining hole is `.{ ... }` in a body. Every method on the vector
-type returns one, and the parser reports it as text rather than as a literal
-with fields, so the body it sits in is refused whole. The type it should take
-is the enclosing function's return type, which is already known.
+`.{ ... }` in a body used to be the biggest hole. Every method on the vector
+type returns one, and the parser reported it as text with nothing inside, so
+each of those bodies was refused whole. The parser descends into it now, and
+the struct it builds is the one the signature says the function returns, which
+is written down rather than inferred. That took the corpus from four ported
+bodies to fourteen.
+
+`undefined` joins `null` in the refusals. It is uninitialised memory, which
+Rust has no safe spelling for at all.
