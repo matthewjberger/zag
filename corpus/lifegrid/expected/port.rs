@@ -38,7 +38,7 @@ pub mod main {
         }
     }
 
-    pub fn glider(grid: &Grid) {
+    pub fn glider(grid: &mut Grid) {
         let _ = grid;
         todo!()
     }

@@ -63,6 +63,10 @@ These programs are what found the following, none of it visible from
   is refused instead.
 - Zig indexes with any integer and Rust indexes with `usize`, so the cast is
   now part of the translation.
+- A `*T` parameter that was not the receiver came across as `&T` while the
+  receiver became `&mut self`, so the same pointer was read two ways depending
+  on where it sat in the signature. It takes `&mut` now, which leaves a body
+  somebody can actually write.
 
 Two shapes are refused rather than ported, because a body expression carries no
 resolved type and both need one. `null` is `None` only once something says what

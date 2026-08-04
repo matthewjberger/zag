@@ -292,6 +292,13 @@ did write through the pointer. Widening a field to `&mut` by hand is only safe
 once you have established that nothing else holds the same address, and that is
 a fact about the whole program which nothing here has checked.
 
+A parameter is the other way round. `*T` there becomes `&mut T` and `*const T`
+becomes `&T`, because the Zig said which one it meant and the port has no
+reason to say otherwise. A field is a place the analysis had to guess about; a
+parameter is a place the author wrote the answer down. The same aliasing
+question applies, and the caller is the one who has to answer it, which is where
+Rust would put it anyway.
+
 Two shapes have no row because they carry no length: `[*]T` and `[*:0]u8`. A
 many-item pointer is a raw pointer plus a length you have to find, and a
 sentinel pointer is one whose length is a scan away. Both need a person.

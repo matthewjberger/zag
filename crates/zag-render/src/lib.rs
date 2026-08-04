@@ -227,6 +227,16 @@ fn render_type(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderE
             out.extend_from_slice(b">");
             Ok(())
         }
+        NodeKind::TypeReferenceMut => {
+            out.extend_from_slice(b"&");
+            let lifetime = lifetime_text(ast.flags[node.0 as usize]);
+            if !lifetime.is_empty() {
+                out.extend_from_slice(lifetime);
+                out.extend_from_slice(b" ");
+            }
+            out.extend_from_slice(b"mut ");
+            render_type(out, ast, only_child(ast, node)?)
+        }
         NodeKind::TypeReference => {
             out.extend_from_slice(b"&");
             let lifetime = lifetime_text(ast.flags[node.0 as usize]);

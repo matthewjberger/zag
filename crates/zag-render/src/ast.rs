@@ -66,6 +66,8 @@ pub enum NodeKind {
     TypeVec = 44,
     /// A cast, the type in `text` and the value as the only child.
     ExpressionAs = 45,
+    /// A borrow the callee may write through, which is what Zig's `*T` is.
+    TypeReferenceMut = 46,
 }
 
 #[repr(u32)]

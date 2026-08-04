@@ -149,11 +149,25 @@ fn lower_parameter(
     // A slice or a pointer comes across as a borrow with the lifetime elided,
     // and everything else comes across by value. The same rule the constructor
     // uses, because it is the same question.
+    //
+    // A `*T` the Zig can write through takes `&mut`, which is what the receiver
+    // has always done. Reading the same pointer two ways depending on where it
+    // sits in the signature leaves a function nobody can write the body of.
+    let writes = tables
+        .parameters
+        .flags
+        .get(row)
+        .is_some_and(|flags| flags & PARAMETER_FLAG_MUTABLE != 0);
     let kind = if is_reference_type(&tables.types, declared) {
         let body = lower_type_body(ast, tables, lowering, declared, 0);
+        let reference = if writes {
+            NodeKind::TypeReferenceMut
+        } else {
+            NodeKind::TypeReference
+        };
         push_node(
             ast,
-            NodeKind::TypeReference,
+            reference,
             absent(),
             absent(),
             0,
