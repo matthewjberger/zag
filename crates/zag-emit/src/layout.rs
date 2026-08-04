@@ -80,7 +80,7 @@ fn missing_packages(tables: &Tables) -> Vec<String> {
     found
 }
 
-fn manifest(name: &str, dependencies: &[String], standalone: bool) -> String {
+fn manifest(name: &str, dependencies: &[String], binaries: &[String], standalone: bool) -> String {
     let mut out = String::new();
     if standalone {
         // Without this a crate written inside another crate's directory is
@@ -91,8 +91,21 @@ fn manifest(name: &str, dependencies: &[String], standalone: bool) -> String {
         "[package]\n\
          name = \"{name}\"\n\
          version = \"0.1.0\"\n\
-         edition = \"2024\"\n\n"
+         edition = \"2024\"\n"
     ));
+    // A Zig file called `main.zig` is a module called `main`, and its file lands
+    // exactly where cargo looks for a binary root. Every target is named here
+    // instead, so what the port builds is what the build script asked for
+    // rather than whatever the file names happened to suggest.
+    if !binaries.is_empty() {
+        out.push_str("autobins = false\n");
+    }
+    out.push('\n');
+    for binary in binaries {
+        out.push_str(&format!(
+            "[[bin]]\nname = \"{binary}\"\npath = \"src/bin/{binary}.rs\"\n\n"
+        ));
+    }
     if !dependencies.is_empty() {
         out.push_str("[dependencies]\n");
         for dependency in dependencies {
@@ -263,7 +276,7 @@ pub fn lay_out(tables: &Tables, output: &Output, name: &str) -> Port {
     }
     files.push(File {
         path: inside("Cargo.toml"),
-        contents: text(&manifest(&name, &missing, missing.is_empty())),
+        contents: text(&manifest(&name, &missing, &binaries, missing.is_empty())),
     });
 
     let mut crates = vec![name.clone()];
@@ -271,7 +284,7 @@ pub fn lay_out(tables: &Tables, output: &Output, name: &str) -> Port {
         crates.push(package.clone());
         files.push(File {
             path: format!("{package}/Cargo.toml"),
-            contents: text(&manifest(package, &[], false)),
+            contents: text(&manifest(package, &[], &[], false)),
         });
         files.push(File {
             path: format!("{package}/src/lib.rs"),

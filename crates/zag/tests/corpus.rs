@@ -169,6 +169,53 @@ fn every_port_compiles() {
     }
 }
 
+/// The crate form, which is what somebody actually keeps. A project read
+/// through its build script carries an artifact per executable, so this is the
+/// only place the binary the layout writes for one is handed to cargo.
+#[test]
+fn cargo_builds_every_project_laid_out_as_a_crate() {
+    if Command::new("cargo").arg("--version").output().is_err() {
+        return;
+    }
+    for name in names() {
+        let Some(output) = ported(&name) else {
+            continue;
+        };
+        let project = zag::read_project(&workspace_root().join("corpus").join(&name))
+            .expect("the project read a moment ago still reads");
+        let tables = zag_frontend::build_project(&project, "x86_64-linux");
+        let port = zag_emit::layout::lay_out(&tables, &output, &name);
+        assert!(
+            !port.binaries.is_empty(),
+            "{name}: the build script names an executable and the layout wrote no binary"
+        );
+        let directory = workspace_root()
+            .join("target")
+            .join("corpus-crate")
+            .join(&name);
+        let _ = std::fs::remove_dir_all(&directory);
+        for file in &port.files {
+            let path = directory.join(&file.path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).expect("the scratch directory is writable");
+            }
+            std::fs::write(&path, &file.contents).expect("the scratch file is writable");
+        }
+        let built = Command::new("cargo")
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(directory.join("Cargo.toml"))
+            .output()
+            .expect("cargo runs");
+        assert!(
+            built.status.success(),
+            "{name} does not build as a crate:
+{}",
+            String::from_utf8_lossy(&built.stderr)
+        );
+    }
+}
+
 /// What fraction of fields the analysis settles, printed rather than asserted.
 /// A threshold here would be a number to game. The point is that a change in
 /// coverage is visible while the diff that caused it is on screen.
