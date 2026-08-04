@@ -83,13 +83,15 @@ to suit the analysis. `crates/zag/tools/reflect` then asks the compiler what tha
 declares, and `crates/zag/tools/extract` parses it for the dataflow, so every struct,
 layout, field offset, function, parameter, call edge, memory operation, and
 field assignment in the fact tables is held to what the compiler found. The
-pipeline ports the result, and `rustc` compiles the port with constants
+pipeline ports the result, and `cargo` builds the port with constants
 evaluated, which is what turns the layout assertions the emitter wrote into
-part of the check. Finally the port is compared byte for byte against the
+part of the check. Cargo rather than the compiler on its own, because it is
+what anyone keeping a port would run and the only thing that reads the manifest
+the port was written with. Finally the port is compared byte for byte against the
 output checked in beside the program.
 
 Two negative controls keep the last step honest. One flips a layout assertion
-and requires the build to fail, and one feeds `rustc` a type that does not
+and requires the build to fail, and one feeds the build a type that does not
 exist. A check that only ever passes says nothing about what it checks.
 
 ## Why not file by file

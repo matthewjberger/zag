@@ -1,8 +1,9 @@
 //! Compiling this crate is the check. Every port below is checked in output,
 //! so its layout assertions run in the build and a struct the emitter spelled
-//! wrong fails here rather than in a program.
+//! wrong fails here rather than in a program. Cargo does it, on every build of
+//! this workspace, which is the same thing anyone keeping a port would run.
 //!
-//! Each port gets a module because two examples may name the same type.
+//! Each port gets a module because two programs may name the same type.
 
 pub mod coverage {
     include!("../../../examples/coverage/expected/port.rs");
@@ -34,4 +35,16 @@ pub mod tokenizer {
 
 pub mod wordcount {
     include!("../../../examples/wordcount/expected/port.rs");
+}
+
+pub mod corpus_config {
+    include!("../../../corpus/config/expected/port.rs");
+}
+
+pub mod corpus_lifegrid {
+    include!("../../../corpus/lifegrid/expected/port.rs");
+}
+
+pub mod corpus_machine {
+    include!("../../../corpus/machine/expected/port.rs");
 }

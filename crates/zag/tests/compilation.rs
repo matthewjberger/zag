@@ -1,12 +1,13 @@
-//! Ports each example and hands the result straight to rustc. `zag-verify`
-//! compiles the output checked in beside each program, which is a different
-//! claim: this one compiles what the pipeline produced a moment ago, so an
-//! emitter that starts writing Rust that does not build fails here even when
-//! nobody has regenerated anything.
+//! Ports each example and builds the result with cargo. `zag-verify` compiles
+//! the output checked in beside each program, which is a different claim: this
+//! one builds what the pipeline produced a moment ago, so an emitter that
+//! starts writing Rust that does not build fails here even when nobody has
+//! regenerated anything.
 //!
-//! Metadata is the only thing emitted, so there is no code generation and no
-//! linking, but constants are still evaluated. That is what makes the layout
-//! assertions the emitter wrote part of the check rather than decoration.
+//! Cargo rather than rustc, because cargo is what anyone keeping a port would
+//! run and it is the only thing that reads the manifest. A check that drives
+//! the compiler directly says nothing about the crate the port is written as,
+//! and that gap is where a package with two targets of one name got through.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,27 +20,35 @@ fn scratch(name: &str) -> PathBuf {
 fn compile(name: &str, source: &[u8]) -> Result<(), String> {
     let directory = scratch(name);
     let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).map_err(|cause| cause.to_string())?;
-    let path = directory.join("port.rs");
-    std::fs::write(&path, source).map_err(|cause| cause.to_string())?;
-    let outcome = build(&path, &directory);
+    let outcome = build(&directory, source);
     let _ = std::fs::remove_dir_all(&directory);
     outcome
 }
 
-fn build(path: &Path, directory: &Path) -> Result<(), String> {
-    let output = Command::new("rustc")
-        .arg("--edition")
-        .arg("2024")
-        .arg("--crate-type")
-        .arg("lib")
-        .arg("--emit")
-        .arg("metadata")
-        .arg("--out-dir")
-        .arg(directory)
-        .arg(path)
+/// One source file as the smallest package cargo will take. The empty
+/// workspace table is what stops it being read as a member of whatever
+/// directory it landed in.
+pub fn build(directory: &Path, source: &[u8]) -> Result<(), String> {
+    std::fs::create_dir_all(directory.join("src")).map_err(|cause| cause.to_string())?;
+    std::fs::write(
+        directory.join("Cargo.toml"),
+        "[workspace]
+
+[package]
+name = \"port\"
+version = \"0.1.0\"
+edition = \"2024\"
+",
+    )
+    .map_err(|cause| cause.to_string())?;
+    std::fs::write(directory.join("src").join("lib.rs"), source)
+        .map_err(|cause| cause.to_string())?;
+    let output = Command::new("cargo")
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(directory.join("Cargo.toml"))
         .output()
-        .map_err(|cause| format!("running rustc: {cause}"))?;
+        .map_err(|cause| format!("running cargo: {cause}"))?;
     if output.status.success() {
         return Ok(());
     }

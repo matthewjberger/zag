@@ -43,10 +43,12 @@ through `@intCast`, and nested `while` loops.
 
 ## What they surface
 
-Every port here compiles. That is the claim the suite makes and the reason the
-refusals below exist: a shape the passes cannot spell correctly is left as
-`todo!()` rather than written wrong, so what comes out is a skeleton somebody
-can start from rather than a file they have to fix before it will build.
+Cargo builds every port here, as the one file `zag emit` writes and as the
+crate `zag build` lays out, and `zag-verify` builds the checked in ones again
+on every build of this workspace. That is the claim the suite makes and the
+reason the refusals below exist: a shape the passes cannot spell correctly is
+left as `todo!()` rather than written wrong, so what comes out is a skeleton
+somebody can start from rather than a file they have to fix before it builds.
 
 These programs are what found the following, none of it visible from
 `examples/`.

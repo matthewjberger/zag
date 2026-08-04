@@ -54,7 +54,11 @@ Dependencies point one way. `zag-facts` and `zag-render` are leaves.
 `examples/` holds Zig programs that build on their own, and
 `zag-facts/src/examples/` holds the tables each one would produce. They are the
 integration layer over unit tests that cover each pass alone, and the chain runs
-from `zig build` through the two tools below to `rustc` compiling the port.
+from `zig build` through the two tools below to `cargo` building the port. Every
+Rust the emitter writes is built by cargo rather than handed to the compiler
+directly, in both the forms it can take: the one file `zag emit` writes and the
+crate `zag build` lays out. Driving the compiler alone says nothing about the
+manifest, and that is where a package with two targets of one name got through.
 
 `crates/zag/tools/reflect` asks the compiler what an example declares and
 `crates/zag/tests/reflection.rs` holds the tables to it: structs, layout, field

@@ -7,8 +7,9 @@
 //! pass arrives as a diff somebody has to read.
 //!
 //! These are ordinary programs rather than programs shaped to suit the
-//! analysis, which is the point. The port of each one is handed to rustc,
-//! because a transpiler whose output does not compile has not finished.
+//! analysis, which is the point. Cargo builds every port both ways it can be
+//! written, because a transpiler whose output does not build has not finished,
+//! and cargo is what the person keeping it would run.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -126,43 +127,57 @@ fn reading_a_project_twice_ports_the_same_way() {
     }
 }
 
-/// Metadata is the only thing emitted, so there is no code generation and no
-/// linking, but constants are still evaluated, which is what turns the layout
-/// assertions the emitter wrote into part of the check.
-fn compiles(path: &Path, directory: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(directory).map_err(|cause| format!("{cause}"))?;
-    let output = Command::new("rustc")
-        .arg("--edition")
-        .arg("2024")
-        .arg("--crate-type")
-        .arg("lib")
-        .arg("--emit")
-        .arg("metadata")
-        .arg("--out-dir")
-        .arg(directory)
-        .arg(path)
+/// One source file as the smallest package cargo will take. The empty
+/// workspace table is what stops it being read as a member of whatever
+/// directory it landed in.
+fn cargo_builds(directory: &Path, source: &[u8]) -> Result<(), String> {
+    std::fs::create_dir_all(directory.join("src")).map_err(|cause| cause.to_string())?;
+    std::fs::write(
+        directory.join("Cargo.toml"),
+        "[workspace]
+
+[package]
+name = \"port\"
+version = \"0.1.0\"
+edition = \"2024\"
+",
+    )
+    .map_err(|cause| cause.to_string())?;
+    std::fs::write(directory.join("src").join("lib.rs"), source)
+        .map_err(|cause| cause.to_string())?;
+    let output = Command::new("cargo")
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(directory.join("Cargo.toml"))
         .output()
-        .map_err(|cause| format!("running rustc: {cause}"))?;
+        .map_err(|cause| format!("running cargo: {cause}"))?;
     if output.status.success() {
         return Ok(());
     }
     Err(String::from_utf8_lossy(&output.stderr).into_owned())
 }
 
-/// The whole claim. A port that does not compile is a port nobody can start
-/// from, and every refusal the passes make is there so this holds.
+/// The single file form, which is what `zag emit` writes and what the
+/// `expected` directory holds. The crate form below is the other half, and a
+/// port has to build both ways because the split between them is the emitter's
+/// work rather than the reader's.
 #[test]
-fn every_port_compiles() {
-    let directory = workspace_root().join("target").join("corpus-rustc");
+fn cargo_builds_every_port_as_one_file() {
+    if Command::new("cargo").arg("--version").output().is_err() {
+        return;
+    }
     for name in names() {
-        let port = workspace_root()
-            .join("corpus")
-            .join(&name)
-            .join("expected")
-            .join("port.rs");
-        if let Err(complaint) = compiles(&port, &directory) {
+        let Some(output) = ported(&name) else {
+            continue;
+        };
+        let directory = workspace_root()
+            .join("target")
+            .join("corpus-single")
+            .join(&name);
+        let _ = std::fs::remove_dir_all(&directory);
+        if let Err(complaint) = cargo_builds(&directory, &output.source) {
             panic!(
-                "{name}: the port does not compile
+                "{name}: the port does not build as one file
 {complaint}"
             );
         }
