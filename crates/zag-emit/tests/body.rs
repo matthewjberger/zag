@@ -164,6 +164,102 @@ fn an_index_and_a_group_carry_across() {
 }
 
 #[test]
+fn a_var_becomes_a_mutable_local_and_a_const_does_not() {
+    for (mutable, expected) in [(1u32, "let mut held = left;"), (0, "let held = left;")] {
+        let program = measuring(move |tables| {
+            let left = spelled(tables, ExpressionKind::Identifier, b"left", &[]);
+            let held = spelled(tables, ExpressionKind::Let, b"held", &[left]);
+            tables.expressions.parameter[held.0 as usize] = mutable;
+            let name = spelled(tables, ExpressionKind::Identifier, b"held", &[]);
+            let returned = spelled(tables, ExpressionKind::Return, b"", &[name]);
+            spelled(tables, ExpressionKind::Block, b"", &[held, returned])
+        });
+        let source = ported(&program);
+        assert!(source.contains(expected), "{source}");
+    }
+}
+
+#[test]
+fn a_method_puts_the_receiver_in_front_of_it() {
+    let program = measuring(|tables| {
+        let left = spelled(tables, ExpressionKind::Identifier, b"left", &[]);
+        let right = spelled(tables, ExpressionKind::Identifier, b"right", &[]);
+        let largest = spelled(tables, ExpressionKind::Method, b"max", &[left, right]);
+        let returned = spelled(tables, ExpressionKind::Return, b"", &[largest]);
+        spelled(tables, ExpressionKind::Block, b"", &[returned])
+    });
+    assert!(
+        ported(&program).contains("left.max(right)"),
+        "{}",
+        ported(&program)
+    );
+}
+
+/// A loop has no value, so it stays a statement wherever it sits, and it
+/// carries its own braces so no semicolon follows it.
+#[test]
+fn a_loop_is_a_statement_even_as_the_last_thing_in_a_block() {
+    let program = measuring(|tables| {
+        let sequence = spelled(tables, ExpressionKind::Identifier, b"left", &[]);
+        let item = spelled(tables, ExpressionKind::Identifier, b"item", &[]);
+        let inside = spelled(tables, ExpressionKind::Block, b"", &[item]);
+        let walked = spelled(tables, ExpressionKind::For, b"item", &[sequence, inside]);
+        spelled(tables, ExpressionKind::Block, b"", &[walked])
+    });
+    let source = ported(&program);
+    assert!(source.contains("for item in left {"), "{source}");
+    assert!(
+        !source.contains("};"),
+        "a braced statement takes no semicolon: {source}"
+    );
+}
+
+#[test]
+fn a_while_carries_its_condition_and_its_body() {
+    let program = measuring(|tables| {
+        let left = spelled(tables, ExpressionKind::Identifier, b"left", &[]);
+        let right = spelled(tables, ExpressionKind::Identifier, b"right", &[]);
+        let condition = spelled(tables, ExpressionKind::Binary, b"<", &[left, right]);
+        let step = spelled(tables, ExpressionKind::Identifier, b"left", &[]);
+        let inside = spelled(tables, ExpressionKind::Block, b"", &[step]);
+        let loop_ = spelled(tables, ExpressionKind::While, b"", &[condition, inside]);
+        spelled(tables, ExpressionKind::Block, b"", &[loop_])
+    });
+    assert!(
+        ported(&program).contains("while left < right {"),
+        "{}",
+        ported(&program)
+    );
+}
+
+/// An assignment gives nothing back, so it keeps its semicolon even where a
+/// value-producing expression would have become the block's value.
+#[test]
+fn an_assignment_at_the_end_of_a_block_still_ends_in_a_semicolon() {
+    let program = measuring(|tables| {
+        let place = spelled(tables, ExpressionKind::Identifier, b"left", &[]);
+        let value = spelled(tables, ExpressionKind::Identifier, b"right", &[]);
+        let stored = spelled(tables, ExpressionKind::Assign, b"", &[place, value]);
+        spelled(tables, ExpressionKind::Block, b"", &[stored])
+    });
+    assert!(
+        ported(&program).contains("left = right;"),
+        "{}",
+        ported(&program)
+    );
+}
+
+#[test]
+fn a_call_with_no_callee_leaves_the_body_unwritten() {
+    let program = measuring(|tables| {
+        let called = spelled(tables, ExpressionKind::Call, b"", &[]);
+        let returned = spelled(tables, ExpressionKind::Return, b"", &[called]);
+        spelled(tables, ExpressionKind::Block, b"", &[returned])
+    });
+    assert!(ported(&program).contains("todo!()"), "{}", ported(&program));
+}
+
+#[test]
 fn one_shape_the_port_cannot_spell_stops_the_whole_body() {
     let program = measuring(|tables| {
         let left = spelled(tables, ExpressionKind::Identifier, b"left", &[]);

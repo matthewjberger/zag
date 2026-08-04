@@ -145,6 +145,31 @@ fn binaryOperator(tag: Ast.Node.Tag) ?[]const u8 {
     };
 }
 
+/// Zig's wrapping and saturating operators, which Rust spells as methods
+/// rather than as operators. The name is what the caller calls them.
+fn overflowOperator(tag: Ast.Node.Tag) ?[]const u8 {
+    return switch (tag) {
+        .add_wrap => "wrapping_add",
+        .sub_wrap => "wrapping_sub",
+        .mul_wrap => "wrapping_mul",
+        .add_sat => "saturating_add",
+        .sub_sat => "saturating_sub",
+        .mul_sat => "saturating_mul",
+        else => null,
+    };
+}
+
+fn isBuiltinCall(tag: Ast.Node.Tag) bool {
+    return switch (tag) {
+        .builtin_call,
+        .builtin_call_comma,
+        .builtin_call_two,
+        .builtin_call_two_comma,
+        => true,
+        else => false,
+    };
+}
+
 fn unaryOperator(tag: Ast.Node.Tag) ?[]const u8 {
     return switch (tag) {
         .bool_not => "!",
@@ -182,6 +207,18 @@ fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
         try emitExpression(walker, sides[1]);
         std.debug.print("expression {s} {d} kind=binary line={d} left={d} right={d} operator={s}\n", .{
             walker.owner, raw, line, @intFromEnum(sides[0]), @intFromEnum(sides[1]), operator,
+        });
+        return;
+    }
+    if (overflowOperator(tag)) |method| {
+        const sides = tree.nodeData(node).node_and_node;
+        try emitExpression(walker, sides[0]);
+        try emitExpression(walker, sides[1]);
+        std.debug.print("expression {s} {d} kind=method line={d} left={d} arguments=1 text={s}\n", .{
+            walker.owner, raw, line, @intFromEnum(sides[0]), method,
+        });
+        std.debug.print("operand {s} {d} 0 node={d}\n", .{
+            walker.owner, raw, @intFromEnum(sides[1]),
         });
         return;
     }
@@ -284,6 +321,62 @@ fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
         return;
     }
 
+    var builtin_buffer: [2]Ast.Node.Index = undefined;
+    if (isBuiltinCall(tag)) {
+        const parameters = tree.builtinCallParams(&builtin_buffer, node) orelse &.{};
+        for (parameters) |parameter| try emitExpression(walker, parameter);
+        std.debug.print("expression {s} {d} kind=builtin line={d} arguments={d} text={s}\n", .{
+            walker.owner,
+            raw,
+            line,
+            parameters.len,
+            tree.tokenSlice(tree.nodeMainToken(node)),
+        });
+        for (parameters, 0..) |parameter, index| {
+            std.debug.print("operand {s} {d} {d} node={d}\n", .{
+                walker.owner, raw, index, @intFromEnum(parameter),
+            });
+        }
+        return;
+    }
+
+    if (tree.fullWhile(node)) |loop| {
+        // A capture turns the condition into a pattern, which is a different
+        // shape from a plain loop, so only the plain one is reported.
+        if (loop.payload_token == null and loop.ast.cont_expr == .none and
+            loop.ast.else_expr == .none)
+        {
+            try emitExpression(walker, loop.ast.cond_expr);
+            try emitExpression(walker, loop.ast.then_expr);
+            std.debug.print("expression {s} {d} kind=while line={d} left={d} right={d}\n", .{
+                walker.owner,
+                raw,
+                line,
+                @intFromEnum(loop.ast.cond_expr),
+                @intFromEnum(loop.ast.then_expr),
+            });
+            return;
+        }
+    }
+
+    if (tree.fullFor(node)) |loop| {
+        // One thing to walk and one name to bind it to. Anything else, an
+        // index alongside it or an else arm, is a different shape.
+        if (loop.ast.inputs.len == 1 and loop.ast.else_expr == .none) {
+            try emitExpression(walker, loop.ast.inputs[0]);
+            try emitExpression(walker, loop.ast.then_expr);
+            std.debug.print("expression {s} {d} kind=for line={d} left={d} right={d} text={s}\n", .{
+                walker.owner,
+                raw,
+                line,
+                @intFromEnum(loop.ast.inputs[0]),
+                @intFromEnum(loop.ast.then_expr),
+                tree.tokenSlice(loop.payload_token),
+            });
+            return;
+        }
+    }
+
     var block_buffer: [2]Ast.Node.Index = undefined;
     if (tree.blockStatements(&block_buffer, node)) |statements| {
         for (statements) |statement| try emitStatement(walker, statement);
@@ -330,11 +423,15 @@ fn emitStatement(walker: Walker, node: Ast.Node.Index) anyerror!void {
         const initialiser = declaration.ast.init_node.unwrap();
         if (initialiser) |expression| {
             try emitExpression(walker, expression);
-            std.debug.print("statement {s} {d} kind=let line={d} left={d} text={s}\n", .{
+            // Zig says `var` where Rust says `let mut`, and a `const` that the
+            // port made mutable would be a different program.
+            const mutable = std.mem.eql(u8, tree.tokenSlice(declaration.ast.mut_token), "var");
+            std.debug.print("statement {s} {d} kind=let line={d} left={d} mutable={d} text={s}\n", .{
                 walker.owner,
                 raw,
                 line,
                 @intFromEnum(expression),
+                @intFromBool(mutable),
                 tree.tokenSlice(declaration.ast.mut_token + 1),
             });
             return;

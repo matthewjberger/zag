@@ -81,6 +81,8 @@ pub struct Node {
     pub left: Option<u32>,
     pub right: Option<u32>,
     pub otherwise: Option<u32>,
+    /// Whether a local was declared with `var` rather than `const`.
+    pub mutable: bool,
     pub operands: Vec<u32>,
 }
 
@@ -222,6 +224,7 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     left: optional(line, "left"),
                     right: optional(line, "right"),
                     otherwise: optional(line, "otherwise"),
+                    mutable: number(line, "mutable") != 0,
                     operands: Vec::new(),
                 };
                 if let Some(function) = function_mut(program, subject) {

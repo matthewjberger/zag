@@ -258,13 +258,32 @@ A function whose body is made of shapes the port can spell comes across whole,
 and the report says `ported, signature and body`. Those shapes are names,
 literals, field access, indexing, the arithmetic and comparison operators,
 `and` and `or`, grouping, `try`, `if` with or without an else, local
-declarations, assignment, and `return`.
+declarations, assignment, `return`, `while`, `for` over one thing, calls to
+functions the tables declare, and the builtins below.
 
 A Zig `return` at the end of a body is a Rust trailing expression, because that
-is what Rust writes and what its linter asks for.
+is what Rust writes and what its linter asks for. A `var` becomes `let mut` and
+a `const` becomes `let`.
 
-Everything else, a `switch`, a loop, a builtin, a call the tables do not know
-the callee of, stops the whole body. The function still comes across as a
+| Zig | Rust | why |
+|---|---|---|
+| `@min(a, b)`, `@max(a, b)` | `a.min(b)`, `a.max(b)` | the same thing, no type to invent |
+| `@abs(a)` | `a.abs()` | the same |
+| `@intCast(x)` | `x.try_into().unwrap()` | Rust infers the target, and the conversion is checked rather than silent |
+| `a +% b`, `a -% b`, `a *% b` | `a.wrapping_add(b)` and so on | Rust has no wrapping operator |
+| `a +\| b`, `a -\| b`, `a *\| b` | `a.saturating_add(b)` and so on | the same |
+| `std.mem.eql(u8, a, b)` | `a == b` | slices compare by value in Rust |
+
+`@truncate` and `@intFromEnum` are not among them, because both need a target
+type that the syntax does not carry and the port will not invent one.
+
+A call comes across when the callee is a function the tables declare, spelled
+with the path that reaches it from where the call is written. The allocator
+argument goes, because the ported signature does not take one. A call to
+anything else, `std` included, is not written.
+
+Everything else, a `switch`, a loop that captures or has an else, a method call
+on a value, stops the whole body. The function still comes across as a
 signature with `todo!()` in it, because a body with one hole in it looks
 finished and is not. The report says which shape stopped it and where.
 

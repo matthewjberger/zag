@@ -18,8 +18,10 @@ Entry.amount
   class: value
   confidence: high
 
-functions: 4
+functions: 6
   main: still to write, the error set it can fail with has no name (main.zig:5)
   close: disappears, Drop frees what it freed (close.zig:4)
   open: still to write, the error set it can fail with has no name (store.zig:4)
   total: ported, signature and body (store.zig:13)
+  largest: ported, signature and body (store.zig:19)
+  combined: ported, signature and body (store.zig:27)

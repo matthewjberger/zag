@@ -13,3 +13,17 @@ pub fn open(allocator: std.mem.Allocator, label: []const u8, amount: u32) !entry
 pub fn total(first: *const entry.Entry, second: *const entry.Entry) u32 {
     return first.amount + second.amount;
 }
+
+/// A loop, a call to a function in the same file, and a builtin that has a
+/// Rust method meaning the same thing.
+pub fn largest(entries: []const entry.Entry) u32 {
+    var highest: u32 = 0;
+    for (entries) |item| {
+        highest = @max(highest, item.amount);
+    }
+    return highest;
+}
+
+pub fn combined(first: *const entry.Entry, second: *const entry.Entry) u32 {
+    return total(first, second) + 1;
+}

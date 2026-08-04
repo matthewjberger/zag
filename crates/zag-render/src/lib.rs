@@ -453,6 +453,9 @@ fn render_expression(
         }
         NodeKind::ExpressionLet => {
             out.extend_from_slice(b"let ");
+            if ast.flags[node.0 as usize] != 0 {
+                out.extend_from_slice(b"mut ");
+            }
             out.extend_from_slice(text_of(ast, node));
             out.extend_from_slice(b" = ");
             render_expression(out, ast, only_child(ast, node)?, depth)
@@ -480,6 +483,46 @@ fn render_expression(
                 render_expression(out, ast, ast.children[children.start + 2], depth)?;
             }
             Ok(())
+        }
+        NodeKind::ExpressionMethod => {
+            let children = node_children(ast, node);
+            if children.is_empty() {
+                return Err(RenderError::MissingChild { node });
+            }
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.push(b'.');
+            out.extend_from_slice(text_of(ast, node));
+            out.push(b'(');
+            for (position, slot) in children.skip(1).enumerate() {
+                if position != 0 {
+                    out.extend_from_slice(b", ");
+                }
+                render_expression(out, ast, ast.children[slot], depth)?;
+            }
+            out.push(b')');
+            Ok(())
+        }
+        NodeKind::ExpressionWhile => {
+            let children = node_children(ast, node);
+            if children.len() != 2 {
+                return Err(RenderError::MissingChild { node });
+            }
+            out.extend_from_slice(b"while ");
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.push(b' ');
+            render_expression(out, ast, ast.children[children.start + 1], depth)
+        }
+        NodeKind::ExpressionFor => {
+            let children = node_children(ast, node);
+            if children.len() != 2 {
+                return Err(RenderError::MissingChild { node });
+            }
+            out.extend_from_slice(b"for ");
+            out.extend_from_slice(text_of(ast, node));
+            out.extend_from_slice(b" in ");
+            render_expression(out, ast, ast.children[children.start], depth)?;
+            out.push(b' ');
+            render_expression(out, ast, ast.children[children.start + 1], depth)
         }
         NodeKind::ExpressionBlock => render_block(out, ast, node, depth),
         found => Err(RenderError::WrongKind { node, found }),

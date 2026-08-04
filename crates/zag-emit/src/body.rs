@@ -61,6 +61,10 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
             | ExpressionKind::Assign
             | ExpressionKind::Group
             | ExpressionKind::Question
+            | ExpressionKind::Method
+            | ExpressionKind::While
+            | ExpressionKind::For
+            | ExpressionKind::Call
     ) {
         return false;
     }
@@ -72,6 +76,7 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
 fn lower_expression(
     ast: &mut Ast,
     tables: &Tables,
+    lowering: crate::lower::Lowering,
     expression: ExpressionId,
     depth: u32,
 ) -> Option<NodeId> {
@@ -82,7 +87,7 @@ fn lower_expression(
     let children = children_of(tables, expression);
     let mut lowered = Vec::with_capacity(children.len());
     for child in &children {
-        lowered.push(lower_expression(ast, tables, *child, depth + 1)?);
+        lowered.push(lower_expression(ast, tables, lowering, *child, depth + 1)?);
     }
     let text = text_of(tables, expression);
     let name = push_string(&mut ast.strings, &text);
@@ -158,7 +163,25 @@ fn lower_expression(
             &lowered,
         ),
         ExpressionKind::Let => {
-            push_node(ast, NodeKind::ExpressionLet, name, absent(), 0, 0, &lowered)
+            // Unset is not mutable. The column means whatever the kind says it
+            // means, and for a local that is one for `var` and nothing else.
+            let mutable = u32::from(
+                tables
+                    .expressions
+                    .parameter
+                    .get(expression.0 as usize)
+                    .copied()
+                    == Some(1),
+            );
+            push_node(
+                ast,
+                NodeKind::ExpressionLet,
+                name,
+                absent(),
+                0,
+                mutable,
+                &lowered,
+            )
         }
         ExpressionKind::Assign => push_node(
             ast,
@@ -178,6 +201,45 @@ fn lower_expression(
             0,
             &lowered,
         ),
+        ExpressionKind::Method => push_node(
+            ast,
+            NodeKind::ExpressionMethod,
+            name,
+            absent(),
+            0,
+            0,
+            &lowered,
+        ),
+        ExpressionKind::While => push_node(
+            ast,
+            NodeKind::ExpressionWhile,
+            absent(),
+            absent(),
+            0,
+            0,
+            &lowered,
+        ),
+        ExpressionKind::For => {
+            push_node(ast, NodeKind::ExpressionFor, name, absent(), 0, 0, &lowered)
+        }
+        ExpressionKind::Call => {
+            let callee = tables
+                .expressions
+                .parameter
+                .get(expression.0 as usize)
+                .copied()
+                .filter(|callee| *callee != NO_INDEX)?;
+            let path = call_path(ast, tables, lowering, FunctionId(callee))?;
+            push_node(
+                ast,
+                NodeKind::ExpressionCall,
+                path,
+                absent(),
+                0,
+                0,
+                &lowered,
+            )
+        }
         ExpressionKind::Block => {
             let statements = lower_statements(ast, tables, &children, &lowered);
             push_node(
@@ -195,9 +257,74 @@ fn lower_expression(
     Some(node)
 }
 
+/// How a call from here reaches the function it names. The same relative
+/// spelling the type paths use, so a port stays correct when it moves.
+fn call_path(
+    ast: &mut Ast,
+    tables: &Tables,
+    lowering: crate::lower::Lowering,
+    callee: FunctionId,
+) -> Option<zag_facts::StringId> {
+    let index = callee.0 as usize;
+    let name = tables.functions.name.get(index).copied()?;
+    let name = crate::function::snake_case(string_bytes(&tables.strings, name));
+    let owner = tables
+        .functions
+        .module
+        .get(index)
+        .copied()
+        .unwrap_or(zag_facts::tables::ROOT_MODULE);
+    let mut path = Vec::new();
+    if lowering.qualified && owner != lowering.module {
+        let module = tables
+            .modules
+            .name
+            .get(owner.0 as usize)
+            .map(|text| string_bytes(&tables.strings, *text))
+            .unwrap_or(b"");
+        if module.is_empty() {
+            // The root has no name to reach it by from inside a submodule.
+            if lowering.module != zag_facts::tables::ROOT_MODULE {
+                return None;
+            }
+        } else {
+            if lowering.module != zag_facts::tables::ROOT_MODULE {
+                path.extend_from_slice(b"super::");
+            }
+            path.extend_from_slice(module);
+            path.extend_from_slice(b"::");
+        }
+    }
+    path.extend_from_slice(&name);
+    Some(push_string(&mut ast.strings, &path))
+}
+
+/// Whether the shape produces a value. A block ends in the value it has, and
+/// something that has none has to stay a statement wherever it sits.
+fn produces_a_value(kind: Option<ExpressionKind>) -> bool {
+    !matches!(
+        kind,
+        Some(ExpressionKind::Let)
+            | Some(ExpressionKind::Assign)
+            | Some(ExpressionKind::While)
+            | Some(ExpressionKind::For)
+    )
+}
+
+/// Whether Rust writes it with braces, in which case no semicolon follows it.
+fn is_braced(kind: Option<ExpressionKind>) -> bool {
+    matches!(
+        kind,
+        Some(ExpressionKind::While)
+            | Some(ExpressionKind::For)
+            | Some(ExpressionKind::Block)
+            | Some(ExpressionKind::Branch)
+    )
+}
+
 /// Wraps everything but the last statement so it ends in a semicolon. The last
 /// one is the value the block has, which is how Rust says what a Zig `return`
-/// at the end of a body said.
+/// at the end of a body said, unless it is something with no value to give.
 fn lower_statements(
     ast: &mut Ast,
     tables: &Tables,
@@ -206,11 +333,17 @@ fn lower_statements(
 ) -> Vec<NodeId> {
     let mut statements = Vec::with_capacity(lowered.len());
     for (position, node) in lowered.iter().enumerate() {
-        let last = position + 1 == lowered.len();
-        let returning = original
+        let kind = original
             .get(position)
-            .and_then(|expression| kind_of(tables, *expression))
-            == Some(ExpressionKind::Return);
+            .and_then(|expression| kind_of(tables, *expression));
+        let last = position + 1 == lowered.len() && produces_a_value(kind);
+        let returning = kind == Some(ExpressionKind::Return);
+        if is_braced(kind) {
+            // A braced statement carries its own end, so a semicolon after it
+            // is one the linter asks to be taken away again.
+            statements.push(*node);
+            continue;
+        }
         if last && returning {
             // `return x;` as the last thing a function does is what Rust
             // writes as a trailing expression, and the linter says so.
@@ -240,7 +373,12 @@ fn lower_statements(
 
 /// The statements a function body is made of, or nothing where any part of it
 /// is a shape the port cannot spell.
-pub fn lower_body(ast: &mut Ast, tables: &Tables, function: FunctionId) -> Option<Vec<NodeId>> {
+pub fn lower_body(
+    ast: &mut Ast,
+    tables: &Tables,
+    lowering: crate::lower::Lowering,
+    function: FunctionId,
+) -> Option<Vec<NodeId>> {
     let body = tables
         .functions
         .body
@@ -259,7 +397,7 @@ pub fn lower_body(ast: &mut Ast, tables: &Tables, function: FunctionId) -> Optio
     }
     let mut lowered = Vec::with_capacity(children.len());
     for child in &children {
-        lowered.push(lower_expression(ast, tables, *child, 1)?);
+        lowered.push(lower_expression(ast, tables, lowering, *child, 1)?);
     }
     Some(lower_statements(ast, tables, &children, &lowered))
 }

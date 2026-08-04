@@ -234,6 +234,13 @@ pub enum ExpressionKind {
     Group = 19,
     /// Zig's `try`, which is Rust's `?`.
     Question = 20,
+    /// The receiver as the first child, the arguments after it, and the method
+    /// in `text`. This is where a Zig builtin with a Rust method that means the
+    /// same thing ends up.
+    Method = 21,
+    While = 22,
+    /// The thing to walk, the body, and the name to bind each item to.
+    For = 23,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]

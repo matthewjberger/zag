@@ -133,6 +133,9 @@ fn expression_kind(kind: ExpressionKind) -> &'static str {
         ExpressionKind::Assign => "assign",
         ExpressionKind::Group => "group",
         ExpressionKind::Question => "question",
+        ExpressionKind::Method => "method",
+        ExpressionKind::While => "while",
+        ExpressionKind::For => "for",
     }
 }
 

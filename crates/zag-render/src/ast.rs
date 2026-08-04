@@ -54,6 +54,11 @@ pub enum NodeKind {
     ExpressionQuestion = 37,
     /// A statement whose value is thrown away, so it ends in a semicolon.
     Statement = 38,
+    /// The receiver first, the arguments after it, the method in `text`.
+    ExpressionMethod = 39,
+    ExpressionWhile = 40,
+    /// The name to bind in `text`, then the sequence and the body.
+    ExpressionFor = 41,
 }
 
 #[repr(u32)]

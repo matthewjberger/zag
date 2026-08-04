@@ -554,7 +554,7 @@ pub fn build_project(modules: &[project::SourceModule], target: &str) -> Tables 
             let Some(handle) = look_up(&built.functions, scope, &function.name) else {
                 continue;
             };
-            declare_body(&mut tables, function, handle);
+            declare_body(&mut tables, &built, scope, function, handle);
         }
     }
     tables
@@ -993,13 +993,19 @@ fn translate(
 /// A shape with no expression kind of its own becomes `Unsupported` carrying
 /// the Zig it stands for. That is what stops a body being half ported: one
 /// unsupported node anywhere and the emitter writes none of it.
-fn declare_body(tables: &mut Tables, function: &Function, handle: FunctionId) {
+fn declare_body(
+    tables: &mut Tables,
+    built_names: &Built,
+    scope: &Scope,
+    function: &Function,
+    handle: FunctionId,
+) {
     if function.body.is_empty() {
         return;
     }
     let mut built: Vec<(u32, ExpressionId)> = Vec::new();
     for node in &function.nodes {
-        let expression = translate_node(tables, node, &built);
+        let expression = translate_node(tables, built_names, scope, node, &built);
         built.push((node.node, expression));
     }
     let statements: Vec<ExpressionId> = function
@@ -1025,8 +1031,84 @@ fn built_child(built: &[(u32, ExpressionId)], node: Option<u32>) -> Option<Expre
     built.iter().find(|(at, _)| *at == node).map(|(_, id)| *id)
 }
 
+/// A call the port can write, which is one whose callee the tables declare.
+/// The allocator arguments go, because the ported signature does not take one.
+///
+/// `std.mem.eql(u8, a, b)` is `a == b` and is recognised by its spelling, the
+/// same way an allocation is. A call to anything else the tables do not know
+/// is left unsupported rather than guessed at.
+fn translate_call(
+    tables: &mut Tables,
+    built: &Built,
+    scope: &Scope,
+    node: &program::Node,
+    operands: &[ExpressionId],
+) -> ExpressionId {
+    if node.text == "std.mem.eql" && operands.len() == 3 {
+        let equals = push_string(&mut tables.strings, b"==");
+        return push_body_expression(
+            tables,
+            ExpressionKind::Binary,
+            equals,
+            node.line,
+            &operands[1..],
+        );
+    }
+    let unsupported = |tables: &mut Tables| {
+        let text = push_string(&mut tables.strings, node.text.as_bytes());
+        push_body_expression(tables, ExpressionKind::Unsupported, text, node.line, &[])
+    };
+    // A qualifier that is not an import is a receiver, and a method call needs
+    // the receiver spelled, which the callee text alone does not give.
+    let (module, _) = qualified(scope, &node.text);
+    if module.is_none() {
+        return unsupported(tables);
+    }
+    let Some(callee) = look_up(&built.functions, scope, &node.text) else {
+        return unsupported(tables);
+    };
+    let kept: Vec<ExpressionId> = zag_facts::tables::function_parameters(&tables.functions, callee)
+        .zip(operands.iter())
+        .filter(|(row, _)| {
+            tables
+                .parameters
+                .flags
+                .get(*row)
+                .is_some_and(|flags| flags & PARAMETER_FLAG_ALLOCATOR == 0)
+        })
+        .map(|(_, operand)| *operand)
+        .collect();
+    let expression = push_body_expression(
+        tables,
+        ExpressionKind::Call,
+        StringId(NO_INDEX),
+        node.line,
+        &kept,
+    );
+    // The callee is a handle rather than a name, so the emitter spells it with
+    // whatever path reaches it from where the call is written.
+    if let Some(slot) = tables.expressions.parameter.get_mut(expression.0 as usize) {
+        *slot = callee.0;
+    }
+    expression
+}
+
+/// A Zig builtin that has a Rust method meaning the same thing, with no type
+/// the port would have to invent. `@truncate` and `@intFromEnum` are not here
+/// because both need a target type that the syntax does not carry.
+fn builtin_method(name: &str) -> Option<(&'static str, usize)> {
+    match name {
+        "@min" => Some(("min", 2)),
+        "@max" => Some(("max", 2)),
+        "@abs" => Some(("abs", 1)),
+        _ => None,
+    }
+}
+
 fn translate_node(
     tables: &mut Tables,
+    built_names: &Built,
+    scope: &Scope,
     node: &program::Node,
     built: &[(u32, ExpressionId)],
 ) -> ExpressionId {
@@ -1112,10 +1194,68 @@ fn translate_node(
             ),
             None => unsupported(tables),
         },
-        "call" if complete => {
-            let text = spelled(tables);
-            push_body_expression(tables, ExpressionKind::Call, text, node.line, &operands)
-        }
+        "method" if complete => match left {
+            Some(receiver) => {
+                let text = spelled(tables);
+                let mut children = vec![receiver];
+                children.extend(operands);
+                push_body_expression(tables, ExpressionKind::Method, text, node.line, &children)
+            }
+            None => unsupported(tables),
+        },
+        "builtin" if complete => match builtin_method(&node.text) {
+            // `@min(a, b)` is `a.min(b)`, so the first argument becomes the
+            // receiver and the rest stay arguments.
+            Some((method, arity)) if operands.len() == arity && !operands.is_empty() => {
+                let text = push_string(&mut tables.strings, method.as_bytes());
+                push_body_expression(tables, ExpressionKind::Method, text, node.line, &operands)
+            }
+            _ if node.text == "@intCast" && operands.len() == 1 => {
+                // Rust infers what it is converting to, so no type has to be
+                // invented, and the conversion is checked rather than silent.
+                let into = push_string(&mut tables.strings, b"try_into");
+                let converted = push_body_expression(
+                    tables,
+                    ExpressionKind::Method,
+                    into,
+                    node.line,
+                    &operands,
+                );
+                let unwrap = push_string(&mut tables.strings, b"unwrap");
+                push_body_expression(
+                    tables,
+                    ExpressionKind::Method,
+                    unwrap,
+                    node.line,
+                    &[converted],
+                )
+            }
+            _ => unsupported(tables),
+        },
+        "call" if complete => translate_call(tables, built_names, scope, node, &operands),
+        "while" => match (left, right) {
+            (Some(condition), Some(body)) => push_body_expression(
+                tables,
+                ExpressionKind::While,
+                StringId(NO_INDEX),
+                node.line,
+                &[condition, body],
+            ),
+            _ => unsupported(tables),
+        },
+        "for" => match (left, right) {
+            (Some(sequence), Some(body)) => {
+                let text = spelled(tables);
+                push_body_expression(
+                    tables,
+                    ExpressionKind::For,
+                    text,
+                    node.line,
+                    &[sequence, body],
+                )
+            }
+            _ => unsupported(tables),
+        },
         "if" => match (left, right) {
             (Some(condition), Some(then)) => {
                 let mut children = vec![condition, then];
@@ -1150,7 +1290,12 @@ fn translate_node(
         "let" => match left {
             Some(left) => {
                 let text = spelled(tables);
-                push_body_expression(tables, ExpressionKind::Let, text, node.line, &[left])
+                let declared =
+                    push_body_expression(tables, ExpressionKind::Let, text, node.line, &[left]);
+                if let Some(slot) = tables.expressions.parameter.get_mut(declared.0 as usize) {
+                    *slot = u32::from(node.mutable);
+                }
+                declared
             }
             None => unsupported(tables),
         },

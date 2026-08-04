@@ -39,6 +39,111 @@ fn sum_of_amounts(tables: &mut Tables) -> ExpressionId {
     )
 }
 
+fn name(tables: &mut Tables, text: &[u8], line: u32) -> ExpressionId {
+    let spelled = push_string(&mut tables.strings, text);
+    push_body_expression(tables, ExpressionKind::Identifier, spelled, line, &[])
+}
+
+/// `var highest = 0; for (entries) |item| highest = @max(highest, item.amount);
+/// return highest;`, which is the loop, the local, and the builtin all at once.
+fn largest_body(tables: &mut Tables) -> ExpressionId {
+    let zero = push_string(&mut tables.strings, b"0");
+    let zero = push_body_expression(tables, ExpressionKind::Literal, zero, 20, &[]);
+    let held = push_string(&mut tables.strings, b"highest");
+    let declared = push_body_expression(tables, ExpressionKind::Let, held, 20, &[zero]);
+    if let Some(slot) = tables.expressions.parameter.get_mut(declared.0 as usize) {
+        *slot = 1;
+    }
+
+    let item = name(tables, b"item", 22);
+    let amount = push_string(&mut tables.strings, b"amount");
+    let amount = push_body_expression(tables, ExpressionKind::Field, amount, 22, &[item]);
+    let running = name(tables, b"highest", 22);
+    let method = push_string(&mut tables.strings, b"max");
+    let largest = push_body_expression(
+        tables,
+        ExpressionKind::Method,
+        method,
+        22,
+        &[running, amount],
+    );
+    let place = name(tables, b"highest", 22);
+    let stored = push_body_expression(
+        tables,
+        ExpressionKind::Assign,
+        StringId(NO_INDEX),
+        22,
+        &[place, largest],
+    );
+    let inside = push_body_expression(
+        tables,
+        ExpressionKind::Block,
+        StringId(NO_INDEX),
+        21,
+        &[stored],
+    );
+    let sequence = name(tables, b"entries", 21);
+    let binding = push_string(&mut tables.strings, b"item");
+    let walked = push_body_expression(
+        tables,
+        ExpressionKind::For,
+        binding,
+        21,
+        &[sequence, inside],
+    );
+
+    let answer = name(tables, b"highest", 24);
+    let returned = push_body_expression(
+        tables,
+        ExpressionKind::Return,
+        StringId(NO_INDEX),
+        24,
+        &[answer],
+    );
+    push_body_expression(
+        tables,
+        ExpressionKind::Block,
+        StringId(NO_INDEX),
+        19,
+        &[declared, walked, returned],
+    )
+}
+
+/// `return total(first, second) + 1;`, which is a call to a function the
+/// tables declare rather than to something they know nothing about.
+fn combined_body(tables: &mut Tables, total: FunctionId) -> ExpressionId {
+    let first = name(tables, b"first", 28);
+    let second = name(tables, b"second", 28);
+    let called = push_body_expression(
+        tables,
+        ExpressionKind::Call,
+        StringId(NO_INDEX),
+        28,
+        &[first, second],
+    );
+    if let Some(slot) = tables.expressions.parameter.get_mut(called.0 as usize) {
+        *slot = total.0;
+    }
+    let one = push_string(&mut tables.strings, b"1");
+    let one = push_body_expression(tables, ExpressionKind::Literal, one, 28, &[]);
+    let plus = push_string(&mut tables.strings, b"+");
+    let sum = push_body_expression(tables, ExpressionKind::Binary, plus, 28, &[called, one]);
+    let returned = push_body_expression(
+        tables,
+        ExpressionKind::Return,
+        StringId(NO_INDEX),
+        28,
+        &[sum],
+    );
+    push_body_expression(
+        tables,
+        ExpressionKind::Block,
+        StringId(NO_INDEX),
+        27,
+        &[returned],
+    )
+}
+
 pub fn tables() -> Tables {
     let mut tables = empty_tables();
     tables.target = intern(&mut tables.strings, b"x86_64-linux");
@@ -103,14 +208,36 @@ pub fn tables() -> Tables {
     declare_parameter(&mut tables, total, b"second", entry_pointer, 0);
     set_function_signature(&mut tables, total, word, StructId(NO_INDEX), false);
 
-    for (function, line) in [(main, 5), (close, 4), (open, 4), (total, 13)] {
+    let entries = push_slice_type(&mut tables, entry_type);
+    let largest = declare_function(&mut tables, b"largest", StructId(NO_INDEX));
+    set_function_module(&mut tables, largest, store_module);
+    declare_parameter(&mut tables, largest, b"entries", entries, 0);
+    set_function_signature(&mut tables, largest, word, StructId(NO_INDEX), false);
+
+    let combined = declare_function(&mut tables, b"combined", StructId(NO_INDEX));
+    set_function_module(&mut tables, combined, store_module);
+    declare_parameter(&mut tables, combined, b"first", entry_pointer, 0);
+    declare_parameter(&mut tables, combined, b"second", entry_pointer, 0);
+    set_function_signature(&mut tables, combined, word, StructId(NO_INDEX), false);
+
+    for (function, line) in [
+        (main, 5),
+        (close, 4),
+        (open, 4),
+        (total, 13),
+        (largest, 19),
+        (combined, 27),
+    ] {
         set_function_line(&mut tables, function, line);
     }
 
-    // `return first.amount + second.amount;`, which is the body the port
-    // writes rather than leaving a `todo!()`.
+    // The bodies the port writes rather than leaving a `todo!()`.
     let body = sum_of_amounts(&mut tables);
     set_function_body(&mut tables, total, body);
+    let body = largest_body(&mut tables);
+    set_function_body(&mut tables, largest, body);
+    let body = combined_body(&mut tables, total);
+    set_function_body(&mut tables, combined, body);
 
     let page = push_allocator_source(
         &mut tables,
