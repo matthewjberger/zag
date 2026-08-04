@@ -89,10 +89,14 @@ pub mod image {
             row * self.width + column
         }
         pub fn write(&mut self, column: u32, row: u32, colour: super::vector::Vector) -> Result<(), Error> {
-            let _ = column;
-            let _ = row;
-            let _ = colour;
-            todo!()
+            if column >= self.width || row >= self.height {
+                return Err(Error::OutOfBounds);
+            }
+            let at = self.offset(column, row);
+            self.red[at as usize] = channel(colour.x);
+            self.green[at as usize] = channel(colour.y);
+            self.blue[at as usize] = channel(colour.z);
+            Ok(())
         }
         pub fn luminance(&self, column: u32, row: u32) -> u32 {
             let _ = column;
@@ -196,13 +200,17 @@ pub mod vector {
             }
         }
         pub fn length_squared(self) -> f32 {
-            todo!()
+            self.dot(self)
         }
         pub fn length(self) -> f32 {
-            todo!()
+            self.length_squared().sqrt()
         }
         pub fn normalize(self) -> Vector {
-            todo!()
+            let size = self.length();
+            if size == 0.0 {
+                return self;
+            }
+            self.scale(1.0 / size)
         }
         pub fn negate(self) -> Vector {
             Vector {
@@ -221,8 +229,7 @@ pub mod vector {
 
     impl Ray {
         pub fn at(self, distance: f32) -> Vector {
-            let _ = distance;
-            todo!()
+            self.from.add(self.towards.scale(distance))
         }
     }
 
@@ -239,8 +246,6 @@ pub mod vector {
     }
 
     pub fn reflect(incoming: Vector, normal: Vector) -> Vector {
-        let _ = incoming;
-        let _ = normal;
-        todo!()
+        incoming.subtract(normal.scale(2.0 * incoming.dot(normal)))
     }
 }

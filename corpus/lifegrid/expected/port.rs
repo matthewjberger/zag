@@ -16,15 +16,14 @@ pub mod main {
             todo!()
         }
         pub fn set(&mut self, column: u32, row: u32, alive: bool) {
-            let _ = column;
-            let _ = row;
-            let _ = alive;
-            todo!()
+            self.cells[self.index(column, row) as usize] = if alive {
+                1
+            } else {
+                0
+            };
         }
         pub fn get(&self, column: u32, row: u32) -> u8 {
-            let _ = column;
-            let _ = row;
-            todo!()
+            self.cells[self.index(column, row) as usize]
         }
         pub fn neighbours(&self, column: u32, row: u32) -> u8 {
             let _ = column;

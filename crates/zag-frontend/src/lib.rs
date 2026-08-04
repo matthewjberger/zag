@@ -1046,6 +1046,11 @@ fn declare_body(
         return;
     }
     let returns = returned_struct(tables, built_names, scope, handle);
+    let fallible = tables
+        .functions
+        .flags
+        .get(handle.0 as usize)
+        .is_some_and(|flags| flags & zag_facts::tables::FUNCTION_FLAG_FALLIBLE != 0);
     let optional_return = tables
         .functions
         .returns
@@ -1053,6 +1058,20 @@ fn declare_body(
         .is_some_and(|kind| {
             tables.types.kind.get(kind.0 as usize) == Some(&zag_facts::tables::TypeKind::Optional)
         });
+    // The parameters are the types the body starts with, and everything it
+    // binds is derived from them.
+    let mut locals: BTreeMap<String, TypeId> = BTreeMap::new();
+    for row in zag_facts::tables::function_parameters(&tables.functions, handle) {
+        if let (Some(name), Some(kind)) = (
+            tables.parameters.name.get(row).copied(),
+            tables.parameters.parameter_type.get(row).copied(),
+        ) {
+            let name =
+                String::from_utf8_lossy(zag_facts::tables::string_bytes(&tables.strings, name))
+                    .into_owned();
+            locals.insert(name, kind);
+        }
+    }
     let mut built: Vec<(u32, ExpressionId)> = Vec::new();
     for node in &function.nodes {
         let owner = scrutinee_container(
@@ -1064,15 +1083,20 @@ fn declare_body(
             &function.nodes,
             node.left,
         );
+        let signature = Signature {
+            owner,
+            returns,
+            optional_return,
+            fallible,
+        };
         let expression = translate_node(
             tables,
             built_names,
             scope,
             node,
             &built,
-            owner,
-            returns,
-            optional_return,
+            &signature,
+            &mut locals,
         );
         built.push((node.node, expression));
     }
@@ -1337,16 +1361,131 @@ fn returned_struct(
     look_up(&built.structs, scope, &text)
 }
 
+/// Whether the expression names a variant of an error set, which is what
+/// decides between `Ok` and `Err` on the way out of a fallible function.
+/// The struct a type reaches, through whatever wrappers it was written behind.
+/// Rewrites a bare integer literal as a float where the expression beside it is
+/// one. Zig reads the literal as whatever fits; Rust needs it written down.
+/// What the enclosing function wrote down, which is where a body gets the types
+/// its own expressions do not carry.
+struct Signature {
+    owner: Option<StructId>,
+    returns: Option<StructId>,
+    optional_return: bool,
+    fallible: bool,
+}
+
+fn widen_beside(tables: &mut Tables, literal: ExpressionId, beside: ExpressionId) {
+    if tables.expressions.kind.get(literal.0 as usize) != Some(&ExpressionKind::Literal) {
+        return;
+    }
+    let float = tables
+        .expressions
+        .result
+        .get(beside.0 as usize)
+        .copied()
+        .is_some_and(|kind| {
+            tables.types.kind.get(kind.0 as usize) == Some(&zag_facts::tables::TypeKind::Float)
+        });
+    if !float {
+        return;
+    }
+    let Some(text) = tables.expressions.text.get(literal.0 as usize).copied() else {
+        return;
+    };
+    let mut widened = zag_facts::tables::string_bytes(&tables.strings, text).to_vec();
+    if widened.is_empty() || !widened.iter().all(|byte| byte.is_ascii_digit()) {
+        return;
+    }
+    widened.extend_from_slice(b".0");
+    let spelled = push_string(&mut tables.strings, &widened);
+    if let Some(slot) = tables.expressions.text.get_mut(literal.0 as usize) {
+        *slot = spelled;
+    }
+}
+
+fn struct_of(tables: &Tables, kind: TypeId, depth: u32) -> Option<StructId> {
+    if depth >= 8 {
+        return None;
+    }
+    if tables.types.kind.get(kind.0 as usize) == Some(&zag_facts::tables::TypeKind::Struct) {
+        return (0..zag_facts::tables::struct_count(&tables.structs))
+            .find(|row| tables.structs.type_id.get(*row).copied() == Some(kind))
+            .map(|row| StructId(row as u32));
+    }
+    let element = tables.types.element.get(kind.0 as usize).copied()?;
+    if element.0 == NO_INDEX || element == kind {
+        return None;
+    }
+    struct_of(tables, element, depth + 1)
+}
+
+/// What `receiver.name(...)` gives back, found through the receiver's own type
+/// rather than through the spelling of the call.
+fn method_result(
+    tables: &Tables,
+    built: &Built,
+    receiver: ExpressionId,
+    name: &str,
+) -> Option<TypeId> {
+    let kind = tables
+        .expressions
+        .result
+        .get(receiver.0 as usize)
+        .copied()?;
+    if kind.0 == NO_INDEX {
+        return None;
+    }
+    let owner = struct_of(tables, kind, 0)?;
+    let handle = built
+        .functions
+        .anywhere
+        .iter()
+        .find(|(key, handle)| {
+            key.as_str() == name
+                && tables.functions.owner.get(handle.0 as usize).copied() == Some(owner)
+        })
+        .map(|(_, handle)| *handle)?;
+    tables
+        .functions
+        .returns
+        .get(handle.0 as usize)
+        .copied()
+        .filter(|kind| kind.0 != NO_INDEX)
+}
+
+fn names_an_error(tables: &Tables, built: &Built, scope: &Scope, expression: ExpressionId) -> bool {
+    if tables.expressions.kind.get(expression.0 as usize) != Some(&ExpressionKind::Identifier) {
+        return false;
+    }
+    let Some(text) = tables.expressions.text.get(expression.0 as usize).copied() else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(zag_facts::tables::string_bytes(&tables.strings, text))
+        .into_owned();
+    let Some((base, _)) = text.split_once("::") else {
+        return false;
+    };
+    look_up(&built.structs, scope, base).is_some_and(|owner| {
+        tables.structs.kind.get(owner.0 as usize) == Some(&ContainerKind::ErrorSet)
+    })
+}
+
 fn translate_node(
     tables: &mut Tables,
     built_names: &Built,
     scope: &Scope,
     node: &program::Node,
     built: &[(u32, ExpressionId)],
-    owner: Option<StructId>,
-    returns: Option<StructId>,
-    optional_return: bool,
+    signature: &Signature,
+    locals: &mut BTreeMap<String, TypeId>,
 ) -> ExpressionId {
+    let Signature {
+        owner,
+        returns,
+        optional_return,
+        fallible,
+    } = *signature;
     let left = built_child(built, node.left);
     let right = built_child(built, node.right);
     let otherwise = built_child(built, node.otherwise);
@@ -1366,7 +1505,17 @@ fn translate_node(
     match node.kind.as_str() {
         "identifier" => {
             let text = spelled(tables);
-            push_body_expression(tables, ExpressionKind::Identifier, text, node.line, &[])
+            let named =
+                push_body_expression(tables, ExpressionKind::Identifier, text, node.line, &[]);
+            // A name the body already bound carries its type forward, which is
+            // what lets a literal beside it be spelled as the right kind of
+            // number.
+            if let Some(kind) = locals.get(&node.text).copied()
+                && let Some(slot) = tables.expressions.result.get_mut(named.0 as usize)
+            {
+                *slot = kind;
+            }
+            named
         }
         "literal" => {
             let text = spelled(tables);
@@ -1433,23 +1582,90 @@ fn translate_node(
             set_expression_line(tables, expression, node.line);
             expression
         }
+        // `Error.ZeroSized` names a variant rather than reading a field, which
+        // Rust spells with a path. The base resolving to a container the
+        // program declares is what tells the two apart.
         "field" => match left {
             Some(left) => {
+                let base = tables
+                    .expressions
+                    .text
+                    .get(left.0 as usize)
+                    .copied()
+                    .map(|text| {
+                        String::from_utf8_lossy(zag_facts::tables::string_bytes(
+                            &tables.strings,
+                            text,
+                        ))
+                        .into_owned()
+                    })
+                    .unwrap_or_default();
+                if tables.expressions.kind.get(left.0 as usize) == Some(&ExpressionKind::Identifier)
+                    && !base.is_empty()
+                    && look_up(&built_names.structs, scope, &base).is_some()
+                {
+                    let variant = pascal_case(node.text.as_bytes());
+                    let path = format!("{base}::{}", String::from_utf8_lossy(&variant));
+                    let named = push_string(&mut tables.strings, path.as_bytes());
+                    return push_body_expression(
+                        tables,
+                        ExpressionKind::Identifier,
+                        named,
+                        node.line,
+                        &[],
+                    );
+                }
                 let text = spelled(tables);
-                push_body_expression(tables, ExpressionKind::Field, text, node.line, &[left])
+                let read =
+                    push_body_expression(tables, ExpressionKind::Field, text, node.line, &[left]);
+                if let Some(kind) = tables.expressions.result.get(left.0 as usize).copied()
+                    && kind.0 != NO_INDEX
+                    && let Some(owner) = struct_of(tables, kind, 0)
+                    && let Some(row) = zag_facts::tables::struct_fields(&tables.structs, owner)
+                        .find(|row| {
+                            zag_facts::tables::string_bytes(
+                                &tables.strings,
+                                tables.fields.name[*row],
+                            ) == node.text.as_bytes()
+                        })
+                    && let Some(declared) = tables.fields.field_type.get(row).copied()
+                    && let Some(slot) = tables.expressions.result.get_mut(read.0 as usize)
+                {
+                    *slot = declared;
+                }
+                read
             }
             None => unsupported(tables),
         },
         "binary" => match (left, right) {
             (Some(left), Some(right)) => {
+                // Zig coerces a bare literal to whatever it is written beside,
+                // so `size == 0` compares floats. Rust reads the literal as an
+                // integer unless the side that carries a type says otherwise.
+                widen_beside(tables, left, right);
+                widen_beside(tables, right, left);
                 let text = spelled(tables);
-                push_body_expression(
+                let combined = push_body_expression(
                     tables,
                     ExpressionKind::Binary,
                     text,
                     node.line,
                     &[left, right],
-                )
+                );
+                let carried = [left, right].into_iter().find_map(|side| {
+                    tables
+                        .expressions
+                        .result
+                        .get(side.0 as usize)
+                        .copied()
+                        .filter(|kind| kind.0 != NO_INDEX)
+                });
+                if let Some(kind) = carried
+                    && let Some(slot) = tables.expressions.result.get_mut(combined.0 as usize)
+                {
+                    *slot = kind;
+                }
+                combined
             }
             _ => unsupported(tables),
         },
@@ -1495,7 +1711,22 @@ fn translate_node(
                 let text = spelled(tables);
                 let mut children = vec![receiver];
                 children.extend(operands);
-                push_body_expression(tables, ExpressionKind::Method, text, node.line, &children)
+                let called = push_body_expression(
+                    tables,
+                    ExpressionKind::Method,
+                    text,
+                    node.line,
+                    &children,
+                );
+                // The receiver's type says which struct the method belongs to,
+                // so what it gives back is known without resolving the call by
+                // name. That is what carries a type into whatever holds it.
+                if let Some(kind) = method_result(tables, built_names, receiver, &node.text)
+                    && let Some(slot) = tables.expressions.result.get_mut(called.0 as usize)
+                {
+                    *slot = kind;
+                }
+                called
             }
             None => unsupported(tables),
         },
@@ -1525,6 +1756,45 @@ fn translate_node(
                     node.line,
                     &[converted],
                 )
+            }
+            // `@as(T, x)` is `x as T`, and the type is the first argument, so
+            // nothing has to be invented. A conversion whose target the syntax
+            // does not carry waits for one: it becomes a cast with no type and
+            // is only spellable once an `@as` around it supplies one.
+            _ if node.text == "@as" && operands.len() == 2 => {
+                let named = tables
+                    .expressions
+                    .text
+                    .get(operands[0].0 as usize)
+                    .copied()
+                    .unwrap_or(StringId(NO_INDEX));
+                let value = operands[1];
+                if tables.expressions.kind.get(value.0 as usize) == Some(&ExpressionKind::Cast)
+                    && zag_facts::tables::string_bytes(
+                        &tables.strings,
+                        tables
+                            .expressions
+                            .text
+                            .get(value.0 as usize)
+                            .copied()
+                            .unwrap_or(StringId(NO_INDEX)),
+                    )
+                    .is_empty()
+                {
+                    if let Some(slot) = tables.expressions.text.get_mut(value.0 as usize) {
+                        *slot = named;
+                    }
+                    return value;
+                }
+                push_body_expression(tables, ExpressionKind::Cast, named, node.line, &[value])
+            }
+            _ if matches!(
+                node.text.as_str(),
+                "@floatFromInt" | "@intFromFloat" | "@truncate" | "@bitCast" | "@enumFromInt"
+            ) && operands.len() == 1 =>
+            {
+                let waiting = push_string(&mut tables.strings, b"");
+                push_body_expression(tables, ExpressionKind::Cast, waiting, node.line, &operands)
             }
             _ => unsupported(tables),
         },
@@ -1612,6 +1882,53 @@ fn translate_node(
         // anything else is the option holding it. Only the boundary is decided
         // here, which is the only place the type is written down.
         "return" => {
+            // A fallible function says so in its signature too, so the value
+            // and the error are both spelled at the boundary rather than
+            // inferred from the body.
+            if fallible {
+                let wrapped = match left {
+                    Some(value) => {
+                        let constructor = if names_an_error(tables, built_names, scope, value) {
+                            b"Err".as_slice()
+                        } else {
+                            b"Ok".as_slice()
+                        };
+                        let text = push_string(&mut tables.strings, constructor);
+                        push_body_expression(
+                            tables,
+                            ExpressionKind::Wrap,
+                            text,
+                            node.line,
+                            &[value],
+                        )
+                    }
+                    None => {
+                        let unit = push_string(&mut tables.strings, b"()");
+                        let empty = push_body_expression(
+                            tables,
+                            ExpressionKind::Literal,
+                            unit,
+                            node.line,
+                            &[],
+                        );
+                        let text = push_string(&mut tables.strings, b"Ok");
+                        push_body_expression(
+                            tables,
+                            ExpressionKind::Wrap,
+                            text,
+                            node.line,
+                            &[empty],
+                        )
+                    }
+                };
+                return push_body_expression(
+                    tables,
+                    ExpressionKind::Return,
+                    StringId(NO_INDEX),
+                    node.line,
+                    &[wrapped],
+                );
+            }
             let children: Vec<ExpressionId> = match (optional_return, left) {
                 (true, Some(value)) => {
                     let text = tables
@@ -1654,6 +1971,11 @@ fn translate_node(
         "let" => match left {
             Some(left) => {
                 let text = spelled(tables);
+                if let Some(kind) = tables.expressions.result.get(left.0 as usize).copied()
+                    && kind.0 != NO_INDEX
+                {
+                    locals.insert(node.text.clone(), kind);
+                }
                 let declared =
                     push_body_expression(tables, ExpressionKind::Let, text, node.line, &[left]);
                 if let Some(slot) = tables.expressions.parameter.get_mut(declared.0 as usize) {

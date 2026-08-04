@@ -390,6 +390,21 @@ fn render_function(
     Ok(())
 }
 
+/// A Zig `if` arm may be a bare value and a Rust one may not, so anything that
+/// is not already a block gets the braces Rust asks for.
+fn render_arm(out: &mut Vec<u8>, ast: &Ast, node: NodeId, depth: usize) -> Result<(), RenderError> {
+    if kind_of(ast, node)? == NodeKind::ExpressionBlock {
+        return render_expression(out, ast, node, depth);
+    }
+    out.extend_from_slice(b"{\n");
+    indent(out, depth + 1);
+    render_expression(out, ast, node, depth + 1)?;
+    out.push(b'\n');
+    indent(out, depth);
+    out.push(b'}');
+    Ok(())
+}
+
 fn render_expression(
     out: &mut Vec<u8>,
     ast: &Ast,
@@ -540,10 +555,10 @@ fn render_expression(
             out.extend_from_slice(b"if ");
             render_expression(out, ast, ast.children[children.start], depth)?;
             out.push(b' ');
-            render_expression(out, ast, ast.children[children.start + 1], depth)?;
+            render_arm(out, ast, ast.children[children.start + 1], depth)?;
             if children.len() > 2 {
                 out.extend_from_slice(b" else ");
-                render_expression(out, ast, ast.children[children.start + 2], depth)?;
+                render_arm(out, ast, ast.children[children.start + 2], depth)?;
             }
             Ok(())
         }

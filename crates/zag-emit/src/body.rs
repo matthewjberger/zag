@@ -74,6 +74,16 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
     if text == b"null" || text == b"undefined" {
         return false;
     }
+    // The compiler's own modules are not ported, so anything reached through
+    // one names something the port does not have.
+    if matches!(kind, ExpressionKind::Identifier) && (text == b"std" || text == b"builtin") {
+        return false;
+    }
+    // A conversion whose target the Zig did not write is one an `@as` around it
+    // was meant to supply. Without one there is no type to convert to.
+    if matches!(kind, ExpressionKind::Cast) && text.is_empty() {
+        return false;
+    }
     // Zig coerces a bare numeric literal to whatever the parameter is. Where
     // the callee resolved, the frontend has already widened the literal to the
     // parameter it lands on. A method call resolves no callee, so there is
@@ -111,6 +121,7 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
             | ExpressionKind::Arm
             | ExpressionKind::StructLiteral
             | ExpressionKind::Wrap
+            | ExpressionKind::Cast
     ) {
         return false;
     }
@@ -318,15 +329,23 @@ fn lower_expression(
             0,
             &lowered,
         ),
-        ExpressionKind::Method => push_node(
-            ast,
-            NodeKind::ExpressionMethod,
-            name,
-            absent(),
-            0,
-            0,
-            &lowered,
-        ),
+        // Zig spells a method in camel case and Rust spells it in snake case,
+        // the same as the declaration the call reaches.
+        ExpressionKind::Method => {
+            let called = push_string(
+                &mut ast.strings,
+                &crate::function::snake_case(&text_of(tables, expression)),
+            );
+            push_node(
+                ast,
+                NodeKind::ExpressionMethod,
+                called,
+                absent(),
+                0,
+                0,
+                &lowered,
+            )
+        }
         ExpressionKind::While => push_node(
             ast,
             NodeKind::ExpressionWhile,
@@ -574,5 +593,29 @@ pub fn lower_body(
     for child in &children {
         lowered.push(lower_expression(ast, tables, lowering, *child, 1)?);
     }
-    Some(lower_statements(ast, tables, &children, &lowered, true))
+    let mut statements = lower_statements(ast, tables, &children, &lowered, true);
+    // A fallible function that runs off the end returns nothing in Zig and has
+    // to say so in Rust.
+    let fallible = tables
+        .functions
+        .flags
+        .get(function.0 as usize)
+        .is_some_and(|flags| flags & zag_facts::tables::FUNCTION_FLAG_FALLIBLE != 0);
+    let returns = children
+        .last()
+        .and_then(|last| kind_of(tables, *last))
+        .is_some_and(|kind| kind == ExpressionKind::Return);
+    if fallible && !returns {
+        let unit = push_string(&mut ast.strings, b"Ok(())");
+        statements.push(push_node(
+            ast,
+            NodeKind::ExpressionLiteral,
+            unit,
+            absent(),
+            0,
+            0,
+            &[],
+        ));
+    }
+    Some(statements)
 }

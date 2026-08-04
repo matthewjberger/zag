@@ -318,6 +318,27 @@ fn emitExpression(walker: Walker, node: Ast.Node.Index) anyerror!void {
     var call_buffer: [1]Ast.Node.Index = undefined;
     if (tree.fullCall(&call_buffer, node)) |call| {
         for (call.ast.params) |parameter| try emitExpression(walker, parameter);
+        // `a.b(c)` is a method call, and the receiver is an expression rather
+        // than part of the callee's name. Spelling it out is what lets the
+        // reader write `a.b(c)` without having to resolve what `a` is.
+        if (tree.nodeTag(call.ast.fn_expr) == .field_access) {
+            const base, const name = tree.nodeData(call.ast.fn_expr).node_and_token;
+            try emitExpression(walker, base);
+            std.debug.print("expression {s} {d} kind=method line={d} left={d} arguments={d} text={s}\n", .{
+                walker.owner,
+                raw,
+                line,
+                @intFromEnum(base),
+                call.ast.params.len,
+                tree.tokenSlice(name),
+            });
+            for (call.ast.params, 0..) |parameter, index| {
+                std.debug.print("operand {s} {d} {d} node={d}\n", .{
+                    walker.owner, raw, index, @intFromEnum(parameter),
+                });
+            }
+            return;
+        }
         // The callee goes last, because it is Zig that may contain a space and
         // the reader takes the rest of the line for it.
         std.debug.print("expression {s} {d} kind=call line={d} arguments={d} text={s}\n", .{
