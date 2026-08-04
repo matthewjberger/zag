@@ -43,6 +43,17 @@ enum Command {
         #[arg(long)]
         report: PathBuf,
     },
+    /// Reads a fact file and writes the port as a crate, or as a workspace
+    /// where the program needs more than one crate
+    Build {
+        #[arg(long)]
+        facts: PathBuf,
+        #[arg(long)]
+        into: PathBuf,
+        /// What to call the crate the program itself becomes
+        #[arg(long, default_value = "port")]
+        name: String,
+    },
 }
 
 fn main() -> std::process::ExitCode {
@@ -87,6 +98,29 @@ fn run(arguments: Arguments) -> Result<(), String> {
             let tables = zag_facts::wire::decode(&bytes)
                 .map_err(|cause| format!("the fact file could not be read: {cause:?}"))?;
             print!("{}", zag_facts::dump::dump(&tables));
+            Ok(())
+        }
+        Command::Build { facts, into, name } => {
+            let bytes =
+                std::fs::read(&facts).map_err(|cause| format!("{}: {cause}", facts.display()))?;
+            let tables = zag_facts::wire::decode(&bytes)
+                .map_err(|cause| format!("the fact file could not be read: {cause:?}"))?;
+            let output = zag::generate(&tables).map_err(|cause| zag::describe(&cause))?;
+            let port = zag_emit::layout::lay_out(&tables, &output, &name);
+            for file in &port.files {
+                write(&into.join(&file.path), &file.contents)?;
+            }
+            write(&into.join("port.report.txt"), &output.report)?;
+            println!(
+                "{} {} into {}",
+                port.crates.len(),
+                if port.crates.len() == 1 {
+                    "crate"
+                } else {
+                    "crates"
+                },
+                into.display()
+            );
             Ok(())
         }
         Command::Emit {

@@ -127,6 +127,17 @@ read file:
     @echo "=== target/read.report.txt ==="
     @cat target/read.report.txt
 
+# Ports one example into a crate you can build. `just build ledger`
+#
+# A Zig file becomes a Rust module in its own file rather than a `pub mod`
+# block, which is what a port a person keeps looks like. A program that names a
+# package the crawl could not read gets a workspace, with a crate standing in
+# for each one.
+build-crate name:
+    @cargo run -q -p zag -- facts --example {{name}} --output target/{{name}}.facts
+    cargo run -q -p zag -- build --facts target/{{name}}.facts --into target/{{name}}-crate --name {{name}}
+    @cargo build --manifest-path target/{{name}}-crate/Cargo.toml
+
 # Prints one example's fact tables as text. `just dump tokenizer`
 #
 # The wire format is columns of numbers and says nothing to a reader. This is

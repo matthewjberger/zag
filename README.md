@@ -30,6 +30,7 @@ just read path/to.zig   # port a Zig program from its root file, and print it
 just names              # the example programs
 just port netpacket     # port one of them
 just dump netpacket     # print its fact tables as text
+just build-crate ledger # write the port as a crate and compile it
 just check              # format, lint, and the whole suite
 ```
 
@@ -188,6 +189,12 @@ has no module tree at all.
 
 An `@import` the crawl cannot turn into a file is reported rather than dropped,
 because a program read with a hole in it is a different program.
+
+`zag build` writes the port as a crate rather than as one file: a manifest, a
+crate root declaring each module, and a file per module. A Zig package the
+crawl could not read is a crate the port needs and does not have, so a program
+that names one becomes a workspace with a place for it and the dependency
+already wired.
 
 Both read syntax rather than semantics. `x.dupe(...)` is an allocation because
 of how it is spelled, not because `x` resolved to an allocator, so a program

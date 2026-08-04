@@ -167,6 +167,22 @@ a line on its own sends a reader nowhere. Layout facts carry none: the compiler
 resolves a struct's size through reflection, which has no source location to
 give, and nothing in the report complains about layout.
 
+### Taking the port away with you
+
+`zag emit` writes the whole program as one file, which is the form the checked
+in output compares against. `zag build --into <directory>` writes the same
+program as a crate: a manifest, a `src/lib.rs` declaring each module, and a
+file per module. That is the form somebody keeps, and `just build-crate <name>`
+runs it over an example and compiles what comes out.
+
+A Zig package the crawl could not read is a crate the port needs and does not
+have. Where a program names one, the port is a workspace: the program's own
+crate, a crate standing in for each package, and the dependency already wired
+between them. Filling those in, or pointing Cargo at the real ones, is work the
+report named and the layout has now made a place for.
+
+A missing `.zig` file is not a missing package and adds no crate.
+
 ### When the report is not enough
 
 `zag dump` prints the fact tables as text, one row per line, in the order the
