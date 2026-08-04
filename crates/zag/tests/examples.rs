@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use zag_facts::examples::{NAMES, is_synthetic, tables_for};
+use zag_facts::examples::{NAMES, tables_for};
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -25,10 +25,7 @@ fn ported(name: &str) -> zag_emit::Output {
 }
 
 fn runnable_names() -> Vec<&'static str> {
-    NAMES
-        .into_iter()
-        .filter(|name| !is_synthetic(name))
-        .collect()
+    NAMES.to_vec()
 }
 
 #[test]

@@ -3,6 +3,15 @@ pub struct Buffer {
     pub length: u32,
 }
 
+impl Buffer {
+    pub fn new(bytes: &[u8]) -> Self {
+        Self {
+            data: Box::from(bytes),
+            length: u32::try_from(bytes.len()).unwrap(),
+        }
+    }
+}
+
 #[repr(C)]
 pub struct Header {
     pub magic: u32,

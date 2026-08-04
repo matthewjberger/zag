@@ -3,8 +3,8 @@ use zag_facts::fixture::example_tables;
 use zag_facts::tables::empty_tables;
 use zag_facts::wire::{DecodeError, encode};
 
-const EXPECTED_SOURCE: &str = include_str!("../../../fixtures/expected/example.rs");
-const EXPECTED_REPORT: &str = include_str!("../../../fixtures/expected/example.report.txt");
+const EXPECTED_SOURCE: &str = include_str!("../../../examples/coverage/expected/port.rs");
+const EXPECTED_REPORT: &str = include_str!("../../../examples/coverage/expected/port.report.txt");
 
 fn generated() -> zag_emit::Output {
     generate(&example_tables()).expect("the fixture must run through the whole pipeline")

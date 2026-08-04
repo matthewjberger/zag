@@ -74,3 +74,14 @@ pub fn makeView(bytes: []const u8) View {
 pub const Cache = struct {
     entries: []const u8,
 };
+
+pub fn main() !void {
+    const buffer = try makeBuffer("hello");
+    const node = try parseTree("one two");
+    const view = makeView("borrowed");
+    std.debug.print("{d} {d} {d}\n", .{
+        buffer.length,
+        node.label.len,
+        view.bytes.len,
+    });
+}

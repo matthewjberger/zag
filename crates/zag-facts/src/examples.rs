@@ -8,12 +8,13 @@ pub mod wordcount;
 
 use crate::tables::Tables;
 
-/// Every name here has a Zig project under `examples/<name>` that builds on
-/// its own, and the tables below are what a frontend reading that project
-/// would hand over. The two are kept in step by hand until the frontend lands.
+/// Every name here has a Zig project under `examples/<name>` that builds and
+/// runs on its own, and the tables below are what reading that project hands
+/// over. The frontend is held to them, so a table that drifts from the program
+/// it describes fails rather than porting something that was never there.
 pub const NAMES: [&str; 8] = [
     "conflict",
-    "fixture",
+    "coverage",
     "ledger",
     "netpacket",
     "shapes",
@@ -22,14 +23,10 @@ pub const NAMES: [&str; 8] = [
     "wordcount",
 ];
 
-/// The coverage fixture is not a runnable project, so it has no directory
-/// under `examples`. It exists to reach every ownership class in one program.
-pub const SYNTHETIC: [&str; 1] = ["fixture"];
-
 pub fn tables_for(name: &str) -> Option<Tables> {
     match name {
         "conflict" => Some(conflict::tables()),
-        "fixture" => Some(crate::fixture::example_tables()),
+        "coverage" => Some(crate::fixture::example_tables()),
         "ledger" => Some(ledger::tables()),
         "netpacket" => Some(netpacket::tables()),
         "shapes" => Some(shapes::tables()),
@@ -38,8 +35,4 @@ pub fn tables_for(name: &str) -> Option<Tables> {
         "wordcount" => Some(wordcount::tables()),
         _ => None,
     }
-}
-
-pub fn is_synthetic(name: &str) -> bool {
-    SYNTHETIC.contains(&name)
 }

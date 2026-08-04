@@ -4,8 +4,8 @@
 //!
 //! Each port gets a module because two examples may name the same type.
 
-pub mod fixture {
-    include!("../../../fixtures/expected/example.rs");
+pub mod coverage {
+    include!("../../../examples/coverage/expected/port.rs");
 }
 
 pub mod conflict {

@@ -59,7 +59,9 @@ and an error set.
 inside the option rather than around it.
 `ledger` is four files where the struct, the allocation, and the free each live
 in a different one.
-`conflict` hands one allocator parameter a heap from one caller and an arena
+coverage reaches every ownership class in one program, which no real program
+does.
+conflict hands one allocator parameter a heap from one caller and an arena
 from another, so it ports to nothing usable, which is the finding rather than a
 failure. [examples/README.md](examples/README.md) covers each in full.
 
@@ -81,10 +83,6 @@ output checked in beside the program.
 Two negative controls keep the last step honest. One flips a layout assertion
 and requires the build to fail, and one feeds `rustc` a type that does not
 exist. A check that only ever passes says nothing about what it checks.
-
-`fixtures/example.zig` is a fifth case that is not a runnable project. It
-exists to reach every ownership class in one program and is ported by
-`just port fixture`.
 
 ## Why not file by file
 

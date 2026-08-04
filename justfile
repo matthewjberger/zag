@@ -36,16 +36,6 @@ fix:
 docs:
     cargo doc --open -p zag
 
-# Writes the worked example fact file, then ports it
-#
-# Nothing reads fixtures/example.zig. The Zig frontend that would turn it into
-# fact tables does not exist yet, so zag-facts hand-builds the tables that
-# source would yield and this runs the rest of the pipeline over them.
-fixture:
-    cargo run -q -p zag -- facts --example fixture --output target/example.facts
-    cargo run -q -p zag -- emit --facts target/example.facts --source target/example.rs --report target/example.report.txt
-    @echo "wrote target/example.rs and target/example.report.txt"
-
 # Ports every example program and rewrites the expected output beside each one
 #
 # `cargo test` compares against those files, so a deliberate change to the
@@ -93,13 +83,12 @@ examples-zig:
         (cd "$directory" && zig build run)
     done
 
-# Regenerates the checked in fixture output
+# Regenerates the checked in output beside every example
 #
-# `cargo test` compares what the pipeline produces against fixtures/expected,
-# so a deliberate change to the emitter is landed by running this and reading
-# the diff. An accidental one fails the suite instead.
-regenerate: fixture examples
-    cargo run -q -p zag -- emit --facts target/example.facts --source fixtures/expected/example.rs --report fixtures/expected/example.report.txt
+# `cargo test` compares what the pipeline produces against every `expected`
+# directory, so a deliberate change to the emitter is landed by running this
+# and reading the diff. An accidental one fails the suite instead.
+regenerate: examples
     cargo test -p zag
 
 # Ports one example and prints what came out. `just port tokenizer`
@@ -150,10 +139,6 @@ dump name:
 # Lists the examples that can be ported
 @names:
     cargo run -q -p zag -- examples
-
-# Shows the ownership report for the worked example
-report: fixture
-    @cat target/example.report.txt
 
 # Times the passes over a synthetic program of the given size
 #

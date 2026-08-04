@@ -40,8 +40,8 @@ which is what `zag read` runs. `zag read` takes a root file and follows
 Zig file becomes a module, the root file keeps the top level, and a program of
 one file has no module tree at all. Modules arrive root first and then sorted
 by path, and handles are handed out in that order, which is what makes the
-merge deterministic. `zag` is the driver. `zag-verify` exists only to compile the checked in
-ports so their layout assertions run during `cargo build`, and
+merge deterministic. `zag` is the driver. `zag-verify` exists only to compile
+the checked in ports so their layout assertions run during `cargo build`, and
 `crates/zag/tests/compilation.rs` does the same to freshly generated ones so a
 broken emitter fails before anything is regenerated.
 
@@ -83,9 +83,8 @@ both counting sorts into compressed sparse row, and new ones should follow that
 shape. The same rule is why the emitter uses `push_string` rather than
 `intern`, which is quadratic and exists only for building small tables by hand.
 
-Changing the emitter changes `fixtures/expected` and every `expected` directory
-under `examples/`. Run `just regenerate` and read the diff. That diff is the
-review.
+Changing the emitter changes every `expected` directory under `examples/`. Run
+`just regenerate` and read the diff. That diff is the review.
 
 A new example needs a directory that `zig build run` succeeds in, a module
 under `zag-facts/src/examples/`, a line in `examples.rs`, and a paragraph in

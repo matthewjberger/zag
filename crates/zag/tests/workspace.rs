@@ -97,14 +97,21 @@ fn the_unsafe_check_looks_past_string_literals_but_not_past_code() {
     assert_eq!(code_before_any_string_literal("unsafe { }"), "unsafe { }");
 }
 
+/// The coverage example is the one program that reaches every ownership class,
+/// so a declaration going missing from it silently narrows what the suite
+/// covers.
 #[test]
-fn the_fixture_zig_source_is_kept_beside_the_tables_that_stand_for_it() {
-    let source = workspace_root().join("fixtures").join("example.zig");
-    let text = std::fs::read_to_string(&source).expect("the fixture source is readable");
+fn the_coverage_example_still_reaches_every_ownership_class() {
+    let source = workspace_root()
+        .join("examples")
+        .join("coverage")
+        .join("src")
+        .join("main.zig");
+    let text = std::fs::read_to_string(&source).expect("the coverage source is readable");
     for name in ["Buffer", "Header", "Node", "View", "Cache"] {
         assert!(
             text.contains(name),
-            "the fixture source must still describe {name}"
+            "the coverage example must still declare {name}"
         );
     }
 }

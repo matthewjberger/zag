@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use zag_facts::examples::{NAMES, is_synthetic, tables_for};
+use zag_facts::examples::{NAMES, tables_for};
 use zag_facts::tables::{
     STRUCT_FLAG_EXTERN, Tables, function_count, string_bytes, struct_count, struct_fields,
 };
@@ -195,10 +195,7 @@ fn declared_functions(tables: &Tables) -> BTreeMap<String, usize> {
 }
 
 fn runnable_names() -> Vec<&'static str> {
-    NAMES
-        .into_iter()
-        .filter(|name| !is_synthetic(name))
-        .collect()
+    NAMES.to_vec()
 }
 
 #[test]

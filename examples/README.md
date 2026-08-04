@@ -115,6 +115,13 @@ and that is the same shape, and a type named across a module boundary is
 spelled with the path to the module that declares it. `store.total` is also the
 example of a body that comes across whole rather than as a `todo!()`.
 
+`coverage` reaches every ownership class in one program, which no real program
+does. `Buffer.data` is owned and freed a call away, `Node.label` comes from an
+arena, `Node.children` is a literal, `View.bytes` is borrowed from its caller,
+and `Cache.entries` is written by nothing at all so the analysis says it cannot
+decide. It also carries the `extern struct` whose layout assertions the port
+compiles.
+
 `conflict` is the one that produces a finding rather than a port. `makeCache`
 takes an allocator, one caller hands it the heap and another hands it an arena,
 so the field has no single owner and the report says

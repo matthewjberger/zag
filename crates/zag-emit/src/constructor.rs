@@ -395,12 +395,19 @@ pub fn lower_constructor(
     let mut children = Vec::new();
     let mut count = 0;
     for row in function_parameters(&tables.functions, function) {
-        if tables.parameters.flags[row] & PARAMETER_FLAG_ALLOCATOR != 0 {
+        // A parameter range that runs off the end of the table is a corrupt
+        // fact file, which is a row to drop rather than a reason to stop.
+        let (Some(&flags), Some(&declared)) = (
+            tables.parameters.flags.get(row),
+            tables.parameters.parameter_type.get(row),
+        ) else {
+            continue;
+        };
+        if flags & PARAMETER_FLAG_ALLOCATOR != 0 {
             continue;
         }
         // A slice or a pointer comes across as a borrow with the lifetime
         // elided, and everything else comes across by value.
-        let declared = tables.parameters.parameter_type[row];
         let kind = if zag_facts::tables::is_reference_type(&tables.types, declared) {
             let body = crate::lower::lower_type_body(ast, tables, lowering, declared, 0);
             push_node(
@@ -415,7 +422,12 @@ pub fn lower_constructor(
         } else {
             lower_field_type(ast, tables, lowering, declared, OwnershipClass::Value)
         };
-        let text = string_bytes(&tables.strings, tables.parameters.name[row]).to_vec();
+        let text = tables
+            .parameters
+            .name
+            .get(row)
+            .map(|name| string_bytes(&tables.strings, *name).to_vec())
+            .unwrap_or_default();
         let name = push_string(&mut ast.strings, &text);
         children.push(push_node(
             ast,

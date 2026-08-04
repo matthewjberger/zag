@@ -1,8 +1,9 @@
 use crate::build::{
-    intern, name_root_module, push_allocator_source, push_call, push_call_argument, push_field,
-    push_field_assignment, push_function, push_integer_type, push_memory_operation,
-    push_opaque_type, push_parameter, push_pointer_type, push_slice_type, push_struct,
-    push_struct_type, push_void_type, set_function_line, set_function_signature, set_struct_deinit,
+    intern, name_root_module, push_allocator_source, push_call, push_call_argument,
+    push_expression, push_field, push_field_assignment_at, push_function, push_integer_type,
+    push_memory_operation, push_opaque_type, push_parameter, push_pointer_type, push_slice_type,
+    push_string, push_struct, push_struct_type, push_void_type, set_expression_line,
+    set_function_line, set_function_signature, set_struct_deinit,
 };
 use crate::handles::{FieldId, FunctionId, MemoryOperationId, NO_INDEX, StructId, TypeId};
 use crate::tables::{
@@ -61,6 +62,7 @@ fn push_fixture_types(tables: &mut Tables) -> FixtureTypes {
 struct FixtureStructs {
     buffer: StructId,
     buffer_data: FieldId,
+    buffer_length: FieldId,
     node_label: FieldId,
     node_children: FieldId,
     view_bytes: FieldId,
@@ -72,7 +74,7 @@ fn push_fixture_structs(tables: &mut Tables, types: &FixtureTypes) -> FixtureStr
     let field_name = intern(&mut tables.strings, b"data");
     let buffer_data = push_field(tables, buffer, field_name, types.slice_of_bytes, 0);
     let field_name = intern(&mut tables.strings, b"length");
-    push_field(tables, buffer, field_name, types.unsigned_32, 16);
+    let buffer_length = push_field(tables, buffer, field_name, types.unsigned_32, 16);
 
     let name = intern(&mut tables.strings, b"Header");
     let header = push_struct(tables, name, types.header, 8, 4, STRUCT_FLAG_EXTERN);
@@ -103,6 +105,7 @@ fn push_fixture_structs(tables: &mut Tables, types: &FixtureTypes) -> FixtureStr
     FixtureStructs {
         buffer,
         buffer_data,
+        buffer_length,
         node_label,
         node_children,
         view_bytes,
@@ -177,14 +180,18 @@ fn push_fixture_functions(
     let make_view = push_function(tables, name, StructId(NO_INDEX));
     push_plain_parameter(tables, make_view, b"bytes", types.slice_of_bytes);
 
+    let name = intern(&mut tables.strings, b"main");
+    let entry_point = push_function(tables, name, StructId(NO_INDEX));
+
     for (function, line) in [
-        (initialize, 16),
-        (deinitialize, 23),
-        (release, 28),
-        (make_buffer, 33),
-        (parse_node, 48),
-        (parse_tree, 57),
-        (make_view, 66),
+        (initialize, 18),
+        (deinitialize, 25),
+        (release, 30),
+        (make_buffer, 35),
+        (parse_node, 50),
+        (parse_tree, 59),
+        (make_view, 68),
+        (entry_point, 78),
     ] {
         set_function_line(tables, function, line);
     }
@@ -198,6 +205,7 @@ fn push_fixture_functions(
     set_function_signature(tables, parse_node, types.node, no_set, true);
     set_function_signature(tables, parse_tree, types.node, no_set, true);
     set_function_signature(tables, make_view, types.view, no_set, false);
+    set_function_signature(tables, entry_point, void, no_set, true);
 
     FixtureFunctions {
         initialize,
@@ -209,7 +217,12 @@ fn push_fixture_functions(
     }
 }
 
-fn push_fixture_flow(tables: &mut Tables, structs: &FixtureStructs, functions: &FixtureFunctions) {
+fn push_fixture_flow(
+    tables: &mut Tables,
+    types: &FixtureTypes,
+    structs: &FixtureStructs,
+    functions: &FixtureFunctions,
+) {
     let deinitialize = tables.structs.deinit[structs.buffer.0 as usize];
 
     let global = push_allocator_source(
@@ -273,43 +286,125 @@ fn push_fixture_flow(tables: &mut Tables, structs: &FixtureStructs, functions: &
         structs.node_label,
     );
 
-    push_field_assignment(
+    // `.data = try allocator.dupe(u8, bytes)` and `.length = @intCast(bytes.len)`,
+    // which between them are what lets `init` come across as a constructor.
+    let copied = allocation(tables, 1, types.slice_of_bytes, 20);
+    push_field_assignment_at(
         tables,
         structs.buffer_data,
         functions.initialize,
         AssignmentSource::Allocation,
         allocate_data,
+        copied,
+        20,
     );
-    push_field_assignment(
+    let counted = push_expression(
+        tables,
+        crate::tables::ExpressionKind::Length,
+        crate::handles::StringId(NO_INDEX),
+        1,
+        types.unsigned_32,
+        FieldId(NO_INDEX),
+        &[],
+    );
+    let counted = push_expression(
+        tables,
+        crate::tables::ExpressionKind::Cast,
+        crate::handles::StringId(NO_INDEX),
+        NO_INDEX,
+        types.unsigned_32,
+        FieldId(NO_INDEX),
+        &[counted],
+    );
+    set_expression_line(tables, counted, 21);
+    push_field_assignment_at(
+        tables,
+        structs.buffer_length,
+        functions.initialize,
+        AssignmentSource::Unknown,
+        MemoryOperationId(NO_INDEX),
+        counted,
+        21,
+    );
+
+    let copied = allocation(tables, 1, types.slice_of_bytes, 52);
+    push_field_assignment_at(
         tables,
         structs.node_label,
         functions.parse_node,
         AssignmentSource::Allocation,
         allocate_label,
+        copied,
+        52,
     );
-    push_field_assignment(
+    let empty = push_string(&mut tables.strings, b"&.{}");
+    let empty = push_expression(
+        tables,
+        crate::tables::ExpressionKind::Literal,
+        empty,
+        NO_INDEX,
+        types.slice_of_words,
+        FieldId(NO_INDEX),
+        &[],
+    );
+    set_expression_line(tables, empty, 53);
+    push_field_assignment_at(
         tables,
         structs.node_children,
         functions.parse_node,
         AssignmentSource::StaticLiteral,
         MemoryOperationId(NO_INDEX),
+        empty,
+        53,
     );
-    push_field_assignment(
+
+    let borrowed = push_expression(
+        tables,
+        crate::tables::ExpressionKind::Parameter,
+        crate::handles::StringId(NO_INDEX),
+        0,
+        types.slice_of_bytes,
+        FieldId(NO_INDEX),
+        &[],
+    );
+    set_expression_line(tables, borrowed, 69);
+    push_field_assignment_at(
         tables,
         structs.view_bytes,
         functions.make_view,
         AssignmentSource::Parameter,
         MemoryOperationId(NO_INDEX),
+        borrowed,
+        69,
     );
+}
+
+fn allocation(
+    tables: &mut Tables,
+    parameter: u32,
+    result: TypeId,
+    line: u32,
+) -> crate::handles::ExpressionId {
+    let expression = push_expression(
+        tables,
+        crate::tables::ExpressionKind::Allocation,
+        crate::handles::StringId(NO_INDEX),
+        parameter,
+        result,
+        FieldId(NO_INDEX),
+        &[],
+    );
+    set_expression_line(tables, expression, line);
+    expression
 }
 
 pub fn example_tables() -> Tables {
     let mut tables = empty_tables();
     tables.target = intern(&mut tables.strings, b"x86_64-linux");
-    name_root_module(&mut tables, b"", b"example.zig");
+    name_root_module(&mut tables, b"", b"main.zig");
     let types = push_fixture_types(&mut tables);
     let structs = push_fixture_structs(&mut tables, &types);
     let functions = push_fixture_functions(&mut tables, &types, &structs);
-    push_fixture_flow(&mut tables, &structs, &functions);
+    push_fixture_flow(&mut tables, &types, &structs, &functions);
     tables
 }

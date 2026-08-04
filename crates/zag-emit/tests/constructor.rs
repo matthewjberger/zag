@@ -271,11 +271,23 @@ fn a_struct_with_no_init_gets_no_constructor() {
     assert!(!source.contains("impl"), "{source}");
 }
 
+/// The coverage example fills its buffer from an allocation and a length, both
+/// of which the port can spell, so it gets a constructor and the allocator
+/// parameter does not survive into it.
 #[test]
-fn the_coverage_fixture_carries_no_expressions_and_so_no_constructors() {
+fn the_coverage_example_gets_the_constructor_its_expressions_allow() {
     let tables = example_tables();
     let analysis = analyze(&tables);
     let ast = lower(&tables, &analysis.ownership);
     let source = String::from_utf8(render(&ast).expect("renders")).expect("text");
-    assert!(!source.contains("impl "), "{source}");
+    assert!(source.contains("impl Buffer {"), "{source}");
+    assert!(
+        source.contains("pub fn new(bytes: &[u8]) -> Self {"),
+        "{source}"
+    );
+    assert!(source.contains("data: Box::from(bytes),"), "{source}");
+    assert!(
+        source.contains("length: u32::try_from(bytes.len()).unwrap(),"),
+        "{source}"
+    );
 }
