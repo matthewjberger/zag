@@ -8,7 +8,7 @@ use zag_facts::tables::{ROOT_MODULE, has_submodules, module_count};
 use zag_facts::{ModuleId, NO_INDEX, StringId, StructId, TypeId};
 use zag_render::ast::{
     Ast, Lifetime, NodeId, NodeKind, STRUCT_FLAG_ARENA_LIFETIME, STRUCT_FLAG_BORROW_LIFETIME,
-    STRUCT_FLAG_REPR_C, empty_ast, push_node,
+    STRUCT_FLAG_CLONE, STRUCT_FLAG_COPY, STRUCT_FLAG_REPR_C, empty_ast, push_node,
 };
 
 const MAXIMUM_TYPE_DEPTH: u32 = 8;
@@ -299,8 +299,37 @@ pub fn lifetimes_of(tables: &Tables, ownership: &Ownership, owner: StructId) -> 
         & (STRUCT_FLAG_BORROW_LIFETIME | STRUCT_FLAG_ARENA_LIFETIME)
 }
 
+/// Whether a field can be copied bit for bit. A reference, a scalar and a raw
+/// pointer all can. A box or a vector owns something, and a named type owns
+/// whatever its own fields do, which this does not follow, so neither counts.
+fn field_is_copied(tables: &Tables, class: Option<&OwnershipClass>, kind: TypeId) -> bool {
+    if matches!(
+        class,
+        Some(OwnershipClass::Owned) | Some(OwnershipClass::Grown)
+    ) {
+        return false;
+    }
+    let mut kind = kind;
+    for _ in 0..MAXIMUM_TYPE_DEPTH {
+        match tables.types.kind.get(kind.0 as usize) {
+            // A variant with no payload has nothing to move, and a field whose
+            // type did not resolve comes across as the unit, which copies.
+            None => return true,
+            Some(TypeKind::Struct) | Some(TypeKind::Opaque) => return false,
+            Some(TypeKind::Array) | Some(TypeKind::Optional) => {
+                match tables.types.element.get(kind.0 as usize).copied() {
+                    Some(element) if element.0 != NO_INDEX && element != kind => kind = element,
+                    _ => return false,
+                }
+            }
+            _ => return true,
+        }
+    }
+    false
+}
+
 fn struct_flags(tables: &Tables, ownership: &Ownership, owner: StructId) -> u32 {
-    let mut flags = 0;
+    let mut flags = STRUCT_FLAG_CLONE | STRUCT_FLAG_COPY;
     if is_extern(tables, owner) {
         flags |= STRUCT_FLAG_REPR_C;
     }
@@ -309,6 +338,15 @@ fn struct_flags(tables: &Tables, ownership: &Ownership, owner: StructId) -> u32 
             Some(OwnershipClass::Borrowed) => flags |= STRUCT_FLAG_BORROW_LIFETIME,
             Some(OwnershipClass::Arena) => flags |= STRUCT_FLAG_ARENA_LIFETIME,
             _ => {}
+        }
+        let declared = tables
+            .fields
+            .field_type
+            .get(row)
+            .copied()
+            .unwrap_or(TypeId(NO_INDEX));
+        if !field_is_copied(tables, ownership.class.get(row), declared) {
+            flags &= !STRUCT_FLAG_COPY;
         }
     }
     flags
@@ -333,6 +371,7 @@ pub fn name_of(tables: &Tables, name: Option<&StringId>) -> Vec<u8> {
 fn lower_enum(
     ast: &mut Ast,
     tables: &Tables,
+    ownership: &Ownership,
     lowering: Lowering,
     owner: StructId,
     carries_payloads: bool,
@@ -360,11 +399,29 @@ fn lower_enum(
     }
     let text = name_of(tables, tables.structs.name.get(owner.0 as usize));
     let name = push_string(&mut ast.strings, &text);
-    let flags = if is_extern(tables, owner) {
-        STRUCT_FLAG_REPR_C
-    } else {
-        0
-    };
+    // An enum and a tagged union get the same derives a struct does, and a
+    // variant's payload is a field, so the same rule decides whether it copies.
+    let mut flags = STRUCT_FLAG_CLONE | STRUCT_FLAG_COPY;
+    if is_extern(tables, owner) {
+        flags |= STRUCT_FLAG_REPR_C;
+    }
+    // Only a union writes a payload, so only a union has anything a variant
+    // could be stopped from copying by.
+    if carries_payloads {
+        for row in struct_fields(&tables.structs, owner) {
+            let declared = tables
+                .fields
+                .field_type
+                .get(row)
+                .copied()
+                .unwrap_or(TypeId(NO_INDEX));
+            if !is_void(tables, declared)
+                && !field_is_copied(tables, ownership.class.get(row), declared)
+            {
+                flags &= !STRUCT_FLAG_COPY;
+            }
+        }
+    }
     push_node(ast, NodeKind::Enum, name, absent(), 0, flags, &variants)
 }
 
@@ -502,11 +559,11 @@ fn lower_module(
         }
         match tables.structs.kind.get(index).copied() {
             Some(ContainerKind::Enum) | Some(ContainerKind::ErrorSet) => {
-                items.push(lower_enum(ast, tables, lowering, owner, false));
+                items.push(lower_enum(ast, tables, ownership, lowering, owner, false));
                 continue;
             }
             Some(ContainerKind::Union) => {
-                items.push(lower_enum(ast, tables, lowering, owner, true));
+                items.push(lower_enum(ast, tables, ownership, lowering, owner, true));
                 continue;
             }
             _ => {}

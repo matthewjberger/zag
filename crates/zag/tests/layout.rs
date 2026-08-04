@@ -71,7 +71,10 @@ fn a_program_of_several_files_gets_a_file_per_module() {
     assert!(root.contains("pub mod entry;"), "{root}");
     assert!(root.contains("pub mod store;"), "{root}");
     let entry = contents(&files, "src/entry.rs");
-    assert!(entry.starts_with("pub struct Entry {"), "{entry}");
+    assert!(entry.contains("pub struct Entry {"), "{entry}");
+    // The derives lead the file, so the module carries the whole declaration
+    // rather than the struct with its attributes left behind.
+    assert!(entry.starts_with("#[derive("), "{entry}");
     assert!(!entry.contains("pub mod"), "{entry}");
 }
 

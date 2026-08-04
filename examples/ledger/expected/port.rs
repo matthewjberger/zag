@@ -1,4 +1,5 @@
 pub mod entry {
+    #[derive(Clone)]
     pub struct Entry {
         pub label: Box<[u8]>,
         pub amount: u32,

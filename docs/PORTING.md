@@ -61,8 +61,12 @@ Buffer.data
 | `grown` | the same, and something reallocates it, so its length is not fixed | `Vec<T>` | that nothing relied on the address staying put |
 | `borrowed` | assigned from a parameter the caller keeps, never freed | `&'a [T]`, and the struct gains `<'a>` | that the caller really outlives the struct |
 | `static` | assigned only from literals, never freed | `&'static [T]` | nothing |
-| `arena` | allocated from an arena | `&'bump [T]`, and the struct gains `<'bump>` | that the arena outlives the struct |
+| `arena` | allocated from an arena, and never resized | `&'bump [T]`, and the struct gains `<'bump>` | that the arena outlives the struct |
 | `unknown` | the evidence is missing or disagrees | `Option<core::ptr::NonNull<[T]>>` | all of it, this is the flag |
+
+An arena field that something resizes has no class at all. The port of an arena
+field is a borrow of the arena, a borrow cannot grow, and there is no third
+thing to write, so it lands on `unknown` with the resize among its evidence.
 
 An `unknown` field compiles and carries no ownership. Leaving one in a finished
 port means the port has a pointer nobody owns.

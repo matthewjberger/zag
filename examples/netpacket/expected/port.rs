@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Header {
     pub magic: u32,
@@ -13,6 +14,7 @@ const _: () = assert!(core::mem::offset_of!(Header, version) == 4);
 const _: () = assert!(core::mem::offset_of!(Header, flags) == 6);
 const _: () = assert!(core::mem::offset_of!(Header, length) == 8);
 
+#[derive(Clone)]
 pub struct Packet {
     pub header: Header,
     pub payload: Box<[u8]>,

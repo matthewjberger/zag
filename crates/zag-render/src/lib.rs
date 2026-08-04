@@ -2,7 +2,7 @@ pub mod ast;
 
 use ast::{
     Ast, Lifetime, NodeId, NodeKind, STRUCT_FLAG_ARENA_LIFETIME, STRUCT_FLAG_BORROW_LIFETIME,
-    STRUCT_FLAG_REPR_C, node_children, node_count,
+    STRUCT_FLAG_CLONE, STRUCT_FLAG_COPY, STRUCT_FLAG_REPR_C, node_children, node_count,
 };
 use zag_facts::tables::string_bytes;
 
@@ -116,8 +116,28 @@ fn render_module(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), Rende
     Ok(())
 }
 
+/// A Zig value is copied wherever it is used. Rust asks for that in writing,
+/// and a port that leaves it out cannot read a struct out of a field.
+fn render_derives(out: &mut Vec<u8>, flags: u32) {
+    if flags & STRUCT_FLAG_CLONE == 0 {
+        return;
+    }
+    if flags & STRUCT_FLAG_COPY != 0 {
+        out.extend_from_slice(
+            b"#[derive(Clone, Copy)]
+",
+        );
+        return;
+    }
+    out.extend_from_slice(
+        b"#[derive(Clone)]
+",
+    );
+}
+
 fn render_struct(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
     let flags = ast.flags[node.0 as usize];
+    render_derives(out, flags);
     if flags & STRUCT_FLAG_REPR_C != 0 {
         out.extend_from_slice(b"#[repr(C)]\n");
     }
@@ -145,6 +165,7 @@ fn render_struct(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), Rende
 /// is whether a variant carries a payload, which is a child node here.
 fn render_enum(out: &mut Vec<u8>, ast: &Ast, node: NodeId) -> Result<(), RenderError> {
     let flags = ast.flags[node.0 as usize];
+    render_derives(out, flags);
     if flags & STRUCT_FLAG_REPR_C != 0 {
         out.extend_from_slice(b"#[repr(C)]\n");
     }
@@ -442,8 +463,22 @@ fn render_expression(
             out.extend_from_slice(text_of(ast, node));
             Ok(())
         }
+        // `as` binds tighter than arithmetic, so `a - 1 as usize` casts the one
+        // rather than the difference. Anything with an operator in it gets
+        // brackets and everything else reads better without them.
         NodeKind::ExpressionAs => {
-            render_expression(out, ast, only_child(ast, node)?, depth)?;
+            let value = only_child(ast, node)?;
+            let bracketed = matches!(
+                kind_of(ast, value)?,
+                NodeKind::ExpressionBinary | NodeKind::ExpressionUnary
+            );
+            if bracketed {
+                out.push(b'(');
+            }
+            render_expression(out, ast, value, depth)?;
+            if bracketed {
+                out.push(b')');
+            }
             out.extend_from_slice(b" as ");
             out.extend_from_slice(text_of(ast, node));
             Ok(())

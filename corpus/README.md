@@ -71,7 +71,11 @@ These programs are what found the following, none of it visible from
   return is optional, and a function with no reference argument to elide from
   is refused instead.
 - Zig indexes with any integer and Rust indexes with `usize`, so the cast is
-  now part of the translation.
+  now part of the translation, bracketed where `as` would otherwise bind
+  tighter than the arithmetic under it.
+- A Zig value is copied wherever it is used and the port said nothing, so
+  reading a struct out of a field moved it. Every ported type derives `Clone`,
+  and the ones with no owned field derive `Copy`, which is what the Zig meant.
 - Three structs in one file each declaring a method called `hit` became one
   function with nine parameters. Every row the parser writes about a function
   names it, and the reader matched on the bare name, so all three piled onto
@@ -109,3 +113,17 @@ bodies to fourteen.
 
 `undefined` joins `null` in the refusals. It is uninitialised memory, which
 Rust has no safe spelling for at all.
+
+`null` itself is no longer refused where it is returned. A function that says
+it returns `?T` has written down what the option holds, so `return null` is
+`return None` and everything else on the way out is wrapped. Inside the body it
+still needs a type nothing carries, so a `var x: ?T = null` is refused as
+before.
+
+Two things a body used to get wrong rather than refuse. A `return` inside an
+`if` lost its keyword, because the rule that turns a trailing `return x` into
+`x` was applied to every block rather than to the one the function ends with.
+And a body written against a struct the analysis left `unknown` read fields off
+a raw pointer, which is a type that says nothing about what it points at; those
+are refused now, and the report says so rather than claiming a body was
+written.

@@ -1,10 +1,12 @@
 pub mod geometry {
+    #[derive(Clone)]
     pub struct Material {
         pub albedo: super::vector::Vector,
         pub shininess: f32,
         pub mirror: bool,
     }
 
+    #[derive(Clone)]
     pub struct Hit {
         pub distance: f32,
         pub point: super::vector::Vector,
@@ -12,6 +14,7 @@ pub mod geometry {
         pub material: Material,
     }
 
+    #[derive(Clone)]
     pub struct Sphere {
         pub centre: super::vector::Vector,
         pub radius: f32,
@@ -26,6 +29,7 @@ pub mod geometry {
         }
     }
 
+    #[derive(Clone)]
     pub struct Plane {
         pub height: f32,
         pub material: Material,
@@ -39,6 +43,7 @@ pub mod geometry {
         }
     }
 
+    #[derive(Clone)]
     pub enum Shape {
         Sphere(Sphere),
         Plane(Plane),
@@ -46,6 +51,7 @@ pub mod geometry {
 }
 
 pub mod image {
+    #[derive(Clone, Copy)]
     #[repr(C)]
     pub struct Header {
         pub magic: u16,
@@ -61,6 +67,7 @@ pub mod image {
     const _: () = assert!(core::mem::offset_of!(Header, height) == 4);
     const _: () = assert!(core::mem::offset_of!(Header, depth) == 6);
 
+    #[derive(Clone)]
     pub struct Image {
         pub red: Box<[u8]>,
         pub green: Box<[u8]>,
@@ -94,6 +101,7 @@ pub mod image {
         }
     }
 
+    #[derive(Clone, Copy)]
     pub enum Error {
         ZeroSized,
         OutOfBounds,
@@ -121,6 +129,7 @@ pub mod main {
 }
 
 pub mod scene {
+    #[derive(Clone)]
     pub struct Scene {
         pub shapes: Option<core::ptr::NonNull<[super::geometry::Shape]>>,
         pub light: super::vector::Vector,
@@ -140,6 +149,7 @@ pub mod scene {
 }
 
 pub mod vector {
+    #[derive(Clone, Copy)]
     pub struct Vector {
         pub x: f32,
         pub y: f32,
@@ -203,6 +213,7 @@ pub mod vector {
         }
     }
 
+    #[derive(Clone)]
     pub struct Ray {
         pub from: Vector,
         pub towards: Vector,

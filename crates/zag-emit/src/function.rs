@@ -391,7 +391,7 @@ pub fn lower_signature(
         count += 1;
     }
     children.push(lower_return_type(ast, tables, lowering, function));
-    if let Some(statements) = crate::body::lower_body(ast, tables, lowering, function) {
+    if let Some(statements) = crate::body::lower_body(ast, tables, ownership, lowering, function) {
         children.extend(statements);
     } else {
         // An unwritten body uses none of what it was handed, so the port

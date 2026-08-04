@@ -52,10 +52,6 @@ pub struct Parameter {
 pub struct Call {
     pub callee: String,
     pub arguments: Vec<String>,
-    /// How many arguments the call was reported with. An argument row names the
-    /// callee rather than the call, so two calls to one callee in one function
-    /// are told apart by filling the first before starting the second.
-    pub arity: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -118,7 +114,14 @@ fn value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let rest = &line[start..];
     // These take the whole rest of the line, because the Zig they carry may
     // contain spaces and is always written last.
-    if key == "value" || key == "type" || key == "returns" || key == "text" || key == "pattern" {
+    // A callee is Zig and may contain a space, which is why it is written last.
+    if key == "value"
+        || key == "type"
+        || key == "returns"
+        || key == "text"
+        || key == "pattern"
+        || key == "callee"
+    {
         return Some(rest);
     }
     Some(rest.split_whitespace().next().unwrap_or(rest))
@@ -196,31 +199,30 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                     function.parameters.push(Parameter { name, declared });
                 }
             }
+            // `call <fn> <index> arguments=<n> callee=<c>`. Calls arrive in
+            // index order within a function, so the row's number is where it
+            // lands.
             "call" => {
                 let callee = value(line, "callee").unwrap_or("-").to_string();
-                let arity = (number(line, "arguments") as usize).min(MAXIMUM_ARGUMENTS);
-                if let Some(function) = function_mut(program, subject) {
+                let at = node_identifier(line) as usize;
+                if let Some(function) = function_mut(program, subject)
+                    && function.calls.len() == at
+                {
                     function.calls.push(Call {
                         callee,
                         arguments: Vec::new(),
-                        arity,
                     });
                 }
             }
+            // `argument <fn> <call> <index> text=<t>`. The call is named by its
+            // number rather than by what it calls, because a function may call
+            // one thing many times.
             "argument" => {
-                let mut pieces = subject.split('|');
-                let owner = pieces.next().unwrap_or("");
-                let callee = pieces.next().unwrap_or("");
+                let at = node_identifier(line) as usize;
                 let text = value(line, "text").unwrap_or("").to_string();
-                // The first call to this callee that is not yet full. Matching
-                // on the callee alone would pile every `allocator.free` in a
-                // `deinit` onto the first one, and every field but the first
-                // would lose the evidence that it is freed at all.
-                if let Some(function) = function_mut(program, owner)
-                    && let Some(call) = function
-                        .calls
-                        .iter_mut()
-                        .find(|call| call.callee == callee && call.arguments.len() < call.arity)
+                if let Some(function) = function_mut(program, subject)
+                    && let Some(call) = function.calls.get_mut(at)
+                    && call.arguments.len() < MAXIMUM_ARGUMENTS
                 {
                     call.arguments.push(text);
                 }

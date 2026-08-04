@@ -681,21 +681,32 @@ pub fn main() !void {
         );
     }
 
+    // Every call gets its own number inside the function that made it, and its
+    // arguments name that number. A callee is not a key: a function may call
+    // one thing many times, and a reader matching on the name alone hands every
+    // argument to whichever call it saw first.
+    const seen = try arena.alloc(usize, functions.items.len);
+    @memset(seen, 0);
     var call_buffer: [1]Ast.Node.Index = undefined;
     for (0..tree.nodes.len) |raw| {
         const node: Ast.Node.Index = @enumFromInt(raw);
         const call = tree.fullCall(&call_buffer, node) orelse continue;
         const owner = innermost(functions.items, tree.firstToken(node)) orelse continue;
         const callee = try collapse(arena, tree.getNodeSource(call.ast.fn_expr));
-        std.debug.print("call {s} callee={s} arguments={d}\n", .{
+        const at = seen[owner];
+        seen[owner] += 1;
+        // The callee goes last, because it is Zig that may contain a space and
+        // the reader takes the rest of the line for it.
+        std.debug.print("call {s} {d} arguments={d} callee={s}\n", .{
             functions.items[owner].name,
-            callee,
+            at,
             call.ast.params.len,
+            callee,
         });
         for (call.ast.params, 0..) |parameter, index| {
-            std.debug.print("argument {s}|{s}|{d} text={s}\n", .{
+            std.debug.print("argument {s} {d} {d} text={s}\n", .{
                 functions.items[owner].name,
-                callee,
+                at,
                 index,
                 try collapse(arena, tree.getNodeSource(parameter)),
             });

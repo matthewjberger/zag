@@ -83,6 +83,10 @@ pub enum Lifetime {
 pub const STRUCT_FLAG_REPR_C: u32 = 1 << 0;
 pub const STRUCT_FLAG_BORROW_LIFETIME: u32 = 1 << 1;
 pub const STRUCT_FLAG_ARENA_LIFETIME: u32 = 1 << 2;
+/// A Zig value is copied wherever it is used, which Rust spells as a derive.
+/// Everything a port writes can be cloned; only some of it can be copied.
+pub const STRUCT_FLAG_CLONE: u32 = 1 << 3;
+pub const STRUCT_FLAG_COPY: u32 = 1 << 4;
 
 /// The parameter is a receiver. Its text is the whole thing Rust writes, so it
 /// carries no type node of its own.

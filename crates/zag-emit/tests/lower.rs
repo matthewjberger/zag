@@ -10,8 +10,8 @@ use zag_facts::fixture::example_tables;
 use zag_facts::tables::{TypeKind, empty_tables};
 use zag_facts::{StructId, TypeId};
 use zag_render::ast::{
-    NodeKind, STRUCT_FLAG_ARENA_LIFETIME, STRUCT_FLAG_BORROW_LIFETIME, STRUCT_FLAG_REPR_C,
-    node_count,
+    NodeKind, STRUCT_FLAG_ARENA_LIFETIME, STRUCT_FLAG_BORROW_LIFETIME, STRUCT_FLAG_CLONE,
+    STRUCT_FLAG_COPY, STRUCT_FLAG_REPR_C, node_count,
 };
 use zag_render::render;
 
@@ -337,14 +337,16 @@ fn the_extern_flag_reaches_the_syntax_tree() {
         .filter(|(kind, _)| **kind == NodeKind::Struct)
         .map(|(_, flags)| *flags)
         .collect();
+    // Every struct clones, and the ones with no owned field copy, which is what
+    // a Zig value does. `Buffer` owns its bytes, so it is the one that cannot.
     assert_eq!(
         flags,
         vec![
-            0,
-            STRUCT_FLAG_REPR_C,
-            STRUCT_FLAG_ARENA_LIFETIME,
-            STRUCT_FLAG_BORROW_LIFETIME,
-            0
+            STRUCT_FLAG_CLONE,
+            STRUCT_FLAG_CLONE | STRUCT_FLAG_COPY | STRUCT_FLAG_REPR_C,
+            STRUCT_FLAG_CLONE | STRUCT_FLAG_COPY | STRUCT_FLAG_ARENA_LIFETIME,
+            STRUCT_FLAG_CLONE | STRUCT_FLAG_COPY | STRUCT_FLAG_BORROW_LIFETIME,
+            STRUCT_FLAG_CLONE | STRUCT_FLAG_COPY,
         ]
     );
 }
@@ -367,7 +369,7 @@ fn a_struct_with_no_fields_still_lowers() {
     push_struct(&mut tables, name, kind, 0, 1, 0);
     let ast = lower(&tables, &ownership_of(&[]));
     let source = String::from_utf8(render(&ast).expect("the tree must render")).expect("text");
-    assert_eq!(source, "pub struct Empty {\n}\n");
+    assert_eq!(source, "#[derive(Clone, Copy)]\npub struct Empty {\n}\n");
 }
 
 #[test]

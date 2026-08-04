@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Counts {
     pub text: Box<[u8]>,
     pub name: Box<[u8]>,

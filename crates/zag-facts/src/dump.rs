@@ -148,6 +148,7 @@ fn expression_kind(kind: ExpressionKind) -> &'static str {
         ExpressionKind::For => "for",
         ExpressionKind::Match => "match",
         ExpressionKind::Arm => "arm",
+        ExpressionKind::Wrap => "wrap",
     }
 }
 

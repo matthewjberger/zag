@@ -1,4 +1,5 @@
 pub mod main {
+    #[derive(Clone)]
     pub struct Grid {
         pub cells: Box<[u8]>,
         pub scratch: Box<[u8]>,

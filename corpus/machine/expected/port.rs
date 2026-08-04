@@ -1,4 +1,5 @@
 pub mod main {
+    #[derive(Clone)]
     pub struct Machine {
         pub stack: [super::opcode::Value; 32],
         pub depth: u32,
@@ -20,7 +21,10 @@ pub mod main {
             todo!()
         }
         pub fn top(&self) -> Option<super::opcode::Value> {
-            todo!()
+            if self.depth == 0 {
+                return None;
+            }
+            Some(self.stack[(self.depth - 1) as usize])
         }
         pub fn run(&mut self, program: &[super::opcode::Instruction]) -> Result<i64, super::opcode::Fault> {
             let _ = program;
@@ -30,6 +34,7 @@ pub mod main {
 }
 
 pub mod opcode {
+    #[derive(Clone, Copy)]
     pub enum Op {
         Push,
         Add,
@@ -41,16 +46,19 @@ pub mod opcode {
         Halt,
     }
 
+    #[derive(Clone, Copy)]
     pub enum Value {
         Number(i64),
         Flag(bool),
     }
 
+    #[derive(Clone)]
     pub struct Instruction {
         pub op: Op,
         pub operand: i64,
     }
 
+    #[derive(Clone, Copy)]
     pub enum Fault {
         StackOverflow,
         StackUnderflow,

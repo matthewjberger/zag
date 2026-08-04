@@ -9,9 +9,10 @@
 //! here rather than a statement list wrapping an expression list.
 
 use crate::lower::absent;
+use zag_analysis::ownership::{Ownership, OwnershipClass};
 use zag_facts::build::push_string;
 use zag_facts::tables::{ExpressionKind, Tables, expression_children, string_bytes};
-use zag_facts::{ExpressionId, FunctionId, NO_INDEX};
+use zag_facts::{ExpressionId, FunctionId, NO_INDEX, StructId, TypeId};
 use zag_render::ast::{Ast, NodeId, NodeKind, push_node};
 
 /// How deep an expression may nest before the port gives up. A tree this deep
@@ -26,6 +27,17 @@ fn children_of(tables: &Tables, expression: ExpressionId) -> Vec<ExpressionId> {
 
 fn kind_of(tables: &Tables, expression: ExpressionId) -> Option<ExpressionKind> {
     tables.expressions.kind.get(expression.0 as usize).copied()
+}
+
+/// The text a row carries, borrowed. The gate reads one per node and the
+/// comparisons need no copy, which is the whole difference from `text_of`.
+fn text_bytes(tables: &Tables, expression: ExpressionId) -> &[u8] {
+    tables
+        .expressions
+        .text
+        .get(expression.0 as usize)
+        .map(|text| string_bytes(&tables.strings, *text))
+        .unwrap_or_default()
 }
 
 fn text_of(tables: &Tables, expression: ExpressionId) -> Vec<u8> {
@@ -51,7 +63,7 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
     // is null of, and everything on the way out of the function would have to
     // be wrapped to match. `.len` is a length on a slice and a field access on
     // anything else, and Rust spells the first as a call.
-    let text = text_of(tables, expression);
+    let text = text_bytes(tables, expression);
     if matches!(kind, ExpressionKind::Field) && text == b"len" {
         return false;
     }
@@ -69,7 +81,7 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
     if matches!(kind, ExpressionKind::Method)
         && children_of(tables, expression).into_iter().any(|child| {
             kind_of(tables, child) == Some(ExpressionKind::Literal)
-                && text_of(tables, child)
+                && text_bytes(tables, child)
                     .iter()
                     .all(|byte| byte.is_ascii_digit())
         })
@@ -98,6 +110,7 @@ pub fn is_spellable(tables: &Tables, expression: ExpressionId, depth: u32) -> bo
             | ExpressionKind::Match
             | ExpressionKind::Arm
             | ExpressionKind::StructLiteral
+            | ExpressionKind::Wrap
     ) {
         return false;
     }
@@ -177,6 +190,15 @@ fn lower_expression(
                 &lowered,
             )
         }
+        ExpressionKind::Wrap => push_node(
+            ast,
+            NodeKind::ExpressionCall,
+            name,
+            absent(),
+            0,
+            0,
+            &lowered,
+        ),
         ExpressionKind::Field => push_node(
             ast,
             NodeKind::ExpressionField,
@@ -204,15 +226,32 @@ fn lower_expression(
             0,
             &lowered,
         ),
-        ExpressionKind::Index => push_node(
-            ast,
-            NodeKind::ExpressionIndex,
-            absent(),
-            absent(),
-            0,
-            0,
-            &lowered,
-        ),
+        // Rust indexes with `usize` and Zig indexes with any integer, so the
+        // cast is part of the translation rather than a widening of it.
+        ExpressionKind::Index => {
+            let mut children = lowered.clone();
+            if let Some(subscript) = children.last_mut() {
+                let cast = push_string(&mut ast.strings, b"usize");
+                *subscript = push_node(
+                    ast,
+                    NodeKind::ExpressionAs,
+                    cast,
+                    absent(),
+                    0,
+                    0,
+                    &[*subscript],
+                );
+            }
+            push_node(
+                ast,
+                NodeKind::ExpressionIndex,
+                absent(),
+                absent(),
+                0,
+                0,
+                &children,
+            )
+        }
         ExpressionKind::Group => push_node(
             ast,
             NodeKind::ExpressionGroup,
@@ -331,7 +370,7 @@ fn lower_expression(
             )
         }
         ExpressionKind::Block => {
-            let statements = lower_statements(ast, tables, &children, &lowered);
+            let statements = lower_statements(ast, tables, &children, &lowered, false);
             push_node(
                 ast,
                 NodeKind::ExpressionBlock,
@@ -415,18 +454,23 @@ fn is_braced(kind: Option<ExpressionKind>) -> bool {
 /// Wraps everything but the last statement so it ends in a semicolon. The last
 /// one is the value the block has, which is how Rust says what a Zig `return`
 /// at the end of a body said, unless it is something with no value to give.
+/// `tail` is whether this block is the last thing the function does. Only there
+/// does a trailing `return x;` mean the same as `x`. Inside an `if` it does
+/// not: dropping the keyword leaves the value in a block that falls through to
+/// whatever comes after it.
 fn lower_statements(
     ast: &mut Ast,
     tables: &Tables,
     original: &[ExpressionId],
     lowered: &[NodeId],
+    tail: bool,
 ) -> Vec<NodeId> {
     let mut statements = Vec::with_capacity(lowered.len());
     for (position, node) in lowered.iter().enumerate() {
         let kind = original
             .get(position)
             .and_then(|expression| kind_of(tables, *expression));
-        let last = position + 1 == lowered.len() && produces_a_value(kind);
+        let last = tail && position + 1 == lowered.len() && produces_a_value(kind);
         let returning = kind == Some(ExpressionKind::Return);
         if is_braced(kind) {
             // A braced statement carries its own end, so a semicolon after it
@@ -463,12 +507,53 @@ fn lower_statements(
 
 /// The statements a function body is made of, or nothing where any part of it
 /// is a shape the port cannot spell.
+/// The struct a parameter reaches, through whatever wrappers it was declared
+/// behind. A body is written against the types in its signature, so this is
+/// what those types are.
+fn struct_behind(tables: &Tables, kind: TypeId, depth: u32) -> Option<StructId> {
+    if depth >= 8 {
+        return None;
+    }
+    let index = kind.0 as usize;
+    if tables.types.kind.get(index) == Some(&zag_facts::tables::TypeKind::Struct) {
+        return (0..zag_facts::tables::struct_count(&tables.structs))
+            .find(|row| tables.structs.type_id.get(*row).copied() == Some(kind))
+            .map(|row| StructId(row as u32));
+    }
+    let element = tables.types.element.get(index).copied()?;
+    if element.0 == NO_INDEX || element == kind {
+        return None;
+    }
+    struct_behind(tables, element, depth + 1)
+}
+
+/// Whether the signature names a struct the analysis could not finish. A field
+/// left `unknown` comes across as a raw pointer, and a body that reads one is
+/// written against a type that says nothing about what it points at, so there
+/// is nothing to write it against yet.
+pub fn signature_is_settled(tables: &Tables, ownership: &Ownership, function: FunctionId) -> bool {
+    zag_facts::tables::function_parameters(&tables.functions, function).all(|row| {
+        let Some(declared) = tables.parameters.parameter_type.get(row).copied() else {
+            return true;
+        };
+        let Some(owner) = struct_behind(tables, declared, 0) else {
+            return true;
+        };
+        zag_facts::tables::struct_fields(&tables.structs, owner)
+            .all(|field| ownership.class.get(field) != Some(&OwnershipClass::Unknown))
+    })
+}
+
 pub fn lower_body(
     ast: &mut Ast,
     tables: &Tables,
+    ownership: &Ownership,
     lowering: crate::lower::Lowering,
     function: FunctionId,
 ) -> Option<Vec<NodeId>> {
+    if !signature_is_settled(tables, ownership, function) {
+        return None;
+    }
     let body = tables
         .functions
         .body
@@ -489,5 +574,5 @@ pub fn lower_body(
     for child in &children {
         lowered.push(lower_expression(ast, tables, lowering, *child, 1)?);
     }
-    Some(lower_statements(ast, tables, &children, &lowered))
+    Some(lower_statements(ast, tables, &children, &lowered, true))
 }

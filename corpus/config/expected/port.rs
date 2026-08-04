@@ -1,10 +1,12 @@
 pub mod document {
+    #[derive(Clone, Copy)]
     pub struct Entry {
         pub section: Option<core::ptr::NonNull<[u8]>>,
         pub key: Option<core::ptr::NonNull<[u8]>>,
         pub value: Option<core::ptr::NonNull<[u8]>>,
     }
 
+    #[derive(Clone)]
     pub struct Document {
         pub text: Box<[u8]>,
         pub entries: Option<core::ptr::NonNull<[Entry]>>,
@@ -28,6 +30,7 @@ pub mod document {
         }
     }
 
+    #[derive(Clone, Copy)]
     pub enum Error {
         MissingEquals,
         UnterminatedSection,

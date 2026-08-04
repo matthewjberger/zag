@@ -196,6 +196,7 @@ fn expression_kind_from_raw(value: u32) -> Result<crate::tables::ExpressionKind,
         23 => Ok(ExpressionKind::For),
         24 => Ok(ExpressionKind::Match),
         25 => Ok(ExpressionKind::Arm),
+        26 => Ok(ExpressionKind::Wrap),
         other => Err(DecodeError::UnknownEnumValue {
             column: "expressions.kind",
             value: other,

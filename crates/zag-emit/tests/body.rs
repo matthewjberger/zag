@@ -157,7 +157,7 @@ fn an_index_and_a_group_carry_across() {
         spelled(tables, ExpressionKind::Block, b"", &[returned])
     });
     assert!(
-        ported(&program).contains("(left[0])"),
+        ported(&program).contains("(left[0 as usize])"),
         "{}",
         ported(&program)
     );

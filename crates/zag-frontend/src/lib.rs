@@ -1046,6 +1046,13 @@ fn declare_body(
         return;
     }
     let returns = returned_struct(tables, built_names, scope, handle);
+    let optional_return = tables
+        .functions
+        .returns
+        .get(handle.0 as usize)
+        .is_some_and(|kind| {
+            tables.types.kind.get(kind.0 as usize) == Some(&zag_facts::tables::TypeKind::Optional)
+        });
     let mut built: Vec<(u32, ExpressionId)> = Vec::new();
     for node in &function.nodes {
         let owner = scrutinee_container(
@@ -1057,7 +1064,16 @@ fn declare_body(
             &function.nodes,
             node.left,
         );
-        let expression = translate_node(tables, built_names, scope, node, &built, owner, returns);
+        let expression = translate_node(
+            tables,
+            built_names,
+            scope,
+            node,
+            &built,
+            owner,
+            returns,
+            optional_return,
+        );
         built.push((node.node, expression));
     }
     let statements: Vec<ExpressionId> = function
@@ -1295,7 +1311,23 @@ fn returned_struct(
     scope: &Scope,
     handle: FunctionId,
 ) -> Option<StructId> {
-    let returns = tables.functions.returns.get(handle.0 as usize).copied()?;
+    let mut returns = tables.functions.returns.get(handle.0 as usize).copied()?;
+    // `?T` is written `return .{ ... }` the same way `T` is, and the struct
+    // being built is the one inside the option. The error union is already off
+    // by the time the return type resolved.
+    for _ in 0..8 {
+        if tables.types.kind.get(returns.0 as usize) != Some(&zag_facts::tables::TypeKind::Optional)
+        {
+            break;
+        }
+        let Some(element) = tables.types.element.get(returns.0 as usize).copied() else {
+            break;
+        };
+        if element.0 == NO_INDEX || element == returns {
+            break;
+        }
+        returns = element;
+    }
     let name = tables.types.name.get(returns.0 as usize).copied()?;
     if name.0 == NO_INDEX {
         return None;
@@ -1313,6 +1345,7 @@ fn translate_node(
     built: &[(u32, ExpressionId)],
     owner: Option<StructId>,
     returns: Option<StructId>,
+    optional_return: bool,
 ) -> ExpressionId {
     let left = built_child(built, node.left);
     let right = built_child(built, node.right);
@@ -1353,7 +1386,9 @@ fn translate_node(
                 .get(container.0 as usize)
                 .copied()
                 .unwrap_or(TypeId(NO_INDEX));
-            let mut children = Vec::new();
+            // Every field resolves before any row is written, so a literal the
+            // port cannot spell leaves nothing behind it.
+            let mut members: Vec<(FieldId, ExpressionId)> = Vec::new();
             for (name, value) in &node.fields {
                 let Some(value) = built_child(built, Some(*value)) else {
                     return unsupported(tables);
@@ -1367,6 +1402,13 @@ fn translate_node(
                 else {
                     return unsupported(tables);
                 };
+                members.push((field, value));
+            }
+            if members.is_empty() {
+                return unsupported(tables);
+            }
+            let mut children = Vec::with_capacity(members.len());
+            for (field, value) in members {
                 let entry = push_expression(
                     tables,
                     ExpressionKind::StructLiteral,
@@ -1378,9 +1420,6 @@ fn translate_node(
                 );
                 set_expression_line(tables, entry, node.line);
                 children.push(entry);
-            }
-            if children.len() != node.fields.len() || children.is_empty() {
-                return unsupported(tables);
             }
             let expression = push_expression(
                 tables,
@@ -1568,8 +1607,42 @@ fn translate_node(
             node.line,
             &operands,
         ),
+        // A function returning `?T` says so in its signature, so a value on the
+        // way out needs no type inferred: `null` is the empty option and
+        // anything else is the option holding it. Only the boundary is decided
+        // here, which is the only place the type is written down.
         "return" => {
-            let children: Vec<ExpressionId> = left.into_iter().collect();
+            let children: Vec<ExpressionId> = match (optional_return, left) {
+                (true, Some(value)) => {
+                    let text = tables
+                        .expressions
+                        .text
+                        .get(value.0 as usize)
+                        .copied()
+                        .map(|text| zag_facts::tables::string_bytes(&tables.strings, text).to_vec())
+                        .unwrap_or_default();
+                    if text == b"null" {
+                        let none = push_string(&mut tables.strings, b"None");
+                        vec![push_body_expression(
+                            tables,
+                            ExpressionKind::Identifier,
+                            none,
+                            node.line,
+                            &[],
+                        )]
+                    } else {
+                        let some = push_string(&mut tables.strings, b"Some");
+                        vec![push_body_expression(
+                            tables,
+                            ExpressionKind::Wrap,
+                            some,
+                            node.line,
+                            &[value],
+                        )]
+                    }
+                }
+                (_, left) => left.into_iter().collect(),
+            };
             push_body_expression(
                 tables,
                 ExpressionKind::Return,

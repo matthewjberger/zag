@@ -283,6 +283,9 @@ pub enum ExpressionKind {
     Match = 24,
     /// The Rust pattern in `text`, the arm body as the only child.
     Arm = 25,
+    /// The constructor named in `text` around the only child, which is how a
+    /// value leaving a function that returns an optional is spelled.
+    Wrap = 26,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]

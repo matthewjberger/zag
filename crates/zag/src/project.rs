@@ -18,6 +18,7 @@
 //! Everything here is ordered. Modules come out sorted by the path they were
 //! resolved to, so the same directory gives the same fact tables every time.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use zag_facts::tables::ArtifactKind;
 use zag_frontend::project::{Artifact, Project, SourceModule};
@@ -131,16 +132,28 @@ fn root_source(text: &str) -> Option<&str> {
 /// The first argument of every call the parser reported, paired with what was
 /// called. An artifact is declared by one call taking one struct literal, so
 /// the name and the root file are both in that one argument's source text.
-fn first_arguments(extraction: &str) -> impl Iterator<Item = (&str, &str)> {
-    extraction.lines().filter_map(|line| {
-        let rest = line.strip_prefix("argument ")?;
-        let (head, text) = rest.split_once(" text=")?;
-        let mut parts = head.split('|');
-        parts.next()?;
-        let callee = parts.next()?;
-        let index = parts.next()?;
-        (index == "0").then_some((callee, text))
-    })
+///
+/// An argument row names its call by number rather than by callee, and a call
+/// row is written before the arguments it takes, so the callee is whatever the
+/// last call row said.
+fn first_arguments(extraction: &str) -> Vec<(&str, &str)> {
+    let mut found = Vec::new();
+    let mut callee = "";
+    for line in extraction.lines() {
+        if let Some(rest) = line.strip_prefix("call ")
+            && let Some((_, named)) = rest.split_once(" callee=")
+        {
+            callee = named;
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("argument ")
+            && let Some((head, text)) = rest.split_once(" text=")
+            && head.split_whitespace().next_back() == Some("0")
+        {
+            found.push((callee, text));
+        }
+    }
+    found
 }
 
 struct Declared {
@@ -212,13 +225,17 @@ struct Crawled {
 fn crawl(roots: &[PathBuf]) -> Result<Vec<Crawled>, String> {
     let mut pending: Vec<PathBuf> = roots.to_vec();
     let mut found: Vec<Crawled> = Vec::new();
+    // Every file asks whether each of its imports has been read, so a scan of
+    // what was found would be quadratic in the size of the program. A program
+    // is exactly the thing this is meant to survive.
+    let mut visited: BTreeSet<PathBuf> = BTreeSet::new();
     while let Some(path) = pending.pop() {
         if found.len() >= MAXIMUM_MODULES {
             return Err(format!(
                 "the crawl reached {MAXIMUM_MODULES} files, which is more than a program should need"
             ));
         }
-        if found.iter().any(|entry| entry.path == path) {
+        if !visited.insert(path.clone()) {
             continue;
         }
         let (extraction, reflection) = crate::ask_zig(&path)?;
@@ -228,7 +245,7 @@ fn crawl(roots: &[PathBuf]) -> Result<Vec<Crawled>, String> {
                 continue;
             }
             if let Some(resolved) = resolve_import(&path, text)
-                && !found.iter().any(|entry| entry.path == resolved)
+                && !visited.contains(&resolved)
             {
                 pending.push(resolved);
             }

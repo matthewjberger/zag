@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Frame {
     pub channels: [u32; 4],
     pub label: Option<&'static [u8]>,

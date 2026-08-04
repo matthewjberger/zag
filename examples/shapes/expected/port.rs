@@ -1,20 +1,24 @@
+#[derive(Clone, Copy)]
 pub enum Colour {
     Red,
     Green,
     Blue,
 }
 
+#[derive(Clone, Copy)]
 pub struct Extent {
     pub width: u32,
     pub height: u32,
 }
 
+#[derive(Clone)]
 pub enum Shape {
     Circle(f32),
     Rectangle(Extent),
     Empty,
 }
 
+#[derive(Clone, Copy)]
 pub enum ParseError {
     Empty,
     TooLarge,

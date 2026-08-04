@@ -63,6 +63,7 @@ fn value_of<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 
 fn parse(text: &str) -> Extraction {
     let mut extraction = Extraction::default();
+    let mut freeing = false;
     for line in text.lines() {
         let mut parts = line.split_whitespace();
         let (Some(kind), Some(subject)) = (parts.next(), parts.next()) else {
@@ -87,28 +88,24 @@ fn parse(text: &str) -> Extraction {
             }
             "call" => {
                 if let Some(callee) = value_of(line, "callee") {
+                    freeing = FREEING.contains(&last_segment(callee.trim()));
                     extraction
                         .calls
                         .insert((last_segment(subject).to_string(), callee.to_string()));
                 }
             }
-            // `argument <fn>|<callee>|<index> text=<x>.<field>`. Only the
+            // `argument <fn> <call> <index> text=<x>.<field>`. The call it
+            // belongs to is the one the last `call` row named, and only the
             // first argument of a freeing call says what was freed.
             "argument" => {
-                let mut pieces = subject.split('|');
-                let (Some(owner), Some(callee), Some("0")) =
-                    (pieces.next(), pieces.next(), pieces.next())
-                else {
-                    continue;
-                };
-                if !FREEING.contains(&last_segment(callee)) {
+                if !freeing || parts.next_back() != Some("0") {
                     continue;
                 }
                 if let Some(text) = value_of(line, "text")
                     && let Some((holder, field)) = text.trim().rsplit_once('.')
                 {
                     extraction.freed.push((
-                        last_segment(owner).to_string(),
+                        last_segment(subject).to_string(),
                         holder.to_string(),
                         field.to_string(),
                     ));

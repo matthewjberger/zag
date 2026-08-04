@@ -227,8 +227,10 @@ pub fn disposition(
         .get(function.0 as usize)
         .copied()
         .filter(|body| body.0 != NO_INDEX)
-        .is_some_and(|body| crate::body::is_spellable(tables, body, 0))
-    {
+        .is_some_and(|body| {
+            crate::body::signature_is_settled(tables, ownership, function)
+                && crate::body::is_spellable(tables, body, 0)
+        }) {
         true => Disposition::Ported,
         false => Disposition::Signature,
     }

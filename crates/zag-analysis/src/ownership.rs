@@ -368,6 +368,13 @@ fn decide(
     } = assignment;
     let allocation_only = only(has_allocation, [has_parameter, has_literal, has_unknown]);
     if has_allocation && allocator == AllocatorClass::Arena {
+        // An arena field comes across as a borrow of the arena, and a borrow
+        // cannot grow. There is no class for something an arena owns and
+        // something else lengthens, so this says so rather than writing a
+        // `&'bump [T]` that the first resize invalidates.
+        if resized {
+            return (OwnershipClass::Unknown, Confidence::Low);
+        }
         let confidence = if allocation_only && !free.freed {
             Confidence::High
         } else {
