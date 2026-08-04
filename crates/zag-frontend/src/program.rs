@@ -2,6 +2,10 @@
 //! Both are line oriented and every line is `<kind> <subject> key=value...`,
 //! so one reader serves both.
 
+/// A cap on what one call is believed to take, so a corrupt arity cannot make
+/// the reader hold a row per number it was handed.
+const MAXIMUM_ARGUMENTS: usize = 32;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Container {
     pub name: String,
@@ -43,6 +47,10 @@ pub struct Parameter {
 pub struct Call {
     pub callee: String,
     pub arguments: Vec<String>,
+    /// How many arguments the call was reported with. An argument row names the
+    /// callee rather than the call, so two calls to one callee in one function
+    /// are told apart by filling the first before starting the second.
+    pub arity: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,10 +179,12 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
             }
             "call" => {
                 let callee = value(line, "callee").unwrap_or("-").to_string();
+                let arity = (number(line, "arguments") as usize).min(MAXIMUM_ARGUMENTS);
                 if let Some(function) = function_mut(program, subject) {
                     function.calls.push(Call {
                         callee,
                         arguments: Vec::new(),
+                        arity,
                     });
                 }
             }
@@ -183,11 +193,15 @@ pub fn parse_extraction(text: &str, program: &mut Program) {
                 let owner = pieces.next().unwrap_or("");
                 let callee = pieces.next().unwrap_or("");
                 let text = value(line, "text").unwrap_or("").to_string();
+                // The first call to this callee that is not yet full. Matching
+                // on the callee alone would pile every `allocator.free` in a
+                // `deinit` onto the first one, and every field but the first
+                // would lose the evidence that it is freed at all.
                 if let Some(function) = function_mut(program, owner)
                     && let Some(call) = function
                         .calls
                         .iter_mut()
-                        .find(|call| call.callee == callee && call.arguments.len() < 32)
+                        .find(|call| call.callee == callee && call.arguments.len() < call.arity)
                 {
                     call.arguments.push(text);
                 }

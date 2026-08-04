@@ -32,6 +32,7 @@ fn every_evidence_kind() -> Vec<EvidenceKind> {
         EvidenceKind::AllocatorIsConflicting,
         EvidenceKind::NoAssignmentsFound,
         EvidenceKind::ResizedAfterAllocation,
+        EvidenceKind::AlignmentCannotBeCarried,
     ];
     for kind in &all {
         match kind {
@@ -45,7 +46,8 @@ fn every_evidence_kind() -> Vec<EvidenceKind> {
             | EvidenceKind::AllocatorIsArena
             | EvidenceKind::AllocatorIsConflicting
             | EvidenceKind::NoAssignmentsFound
-            | EvidenceKind::ResizedAfterAllocation => {}
+            | EvidenceKind::ResizedAfterAllocation
+            | EvidenceKind::AlignmentCannotBeCarried => {}
         }
     }
     all

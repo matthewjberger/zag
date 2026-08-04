@@ -10,7 +10,8 @@ use zag_facts::build::{
     push_memory_operation, push_opaque_type, push_optional_type, push_pointer_type,
     push_slice_type, push_string, push_struct, push_struct_type, push_unresolved_import,
     set_expression_line, set_function_body, set_function_line, set_function_module,
-    set_function_signature, set_struct_deinit, set_struct_kind, set_struct_module, set_type_module,
+    set_function_signature, set_struct_deinit, set_struct_kind, set_struct_module, set_type_flags,
+    set_type_module,
 };
 use zag_facts::handles::{
     ExpressionId, FieldId, FunctionId, MemoryOperationId, ModuleId, NO_INDEX, StringId, StructId,
@@ -19,7 +20,7 @@ use zag_facts::handles::{
 use zag_facts::tables::{
     AllocatorSourceKind, AssignmentSource, ContainerKind, ExpressionKind, MemoryOperationKind,
     PARAMETER_FLAG_ALLOCATOR, PARAMETER_FLAG_MUTABLE, PlaceKind, ROOT_MODULE, STRUCT_FLAG_EXTERN,
-    Tables, empty_tables,
+    TYPE_FLAG_OVER_ALIGNED, Tables, empty_tables,
 };
 
 const ALLOCATING: [&str; 6] = [
@@ -138,6 +139,29 @@ fn look_up<Handle: Copy>(index: &Index<Handle>, scope: &Scope, text: &str) -> Op
     index.anywhere.get(simple).copied()
 }
 
+/// Strips what a slice or a pointer may carry in front of its element type.
+/// `const` says nothing the port needs, and `align(N)` says something it cannot
+/// write, so the caller is told the request was there and drops it rather than
+/// resolving a type named after the qualifier.
+fn strip_qualifiers(text: &str) -> (&str, bool) {
+    let mut rest = text.trim();
+    let mut aligned = false;
+    loop {
+        if let Some(next) = rest.strip_prefix("const ") {
+            rest = next.trim_start();
+            continue;
+        }
+        if let Some(next) = rest.strip_prefix("align(")
+            && let Some(close) = next.find(')')
+        {
+            rest = next[close + 1..].trim_start();
+            aligned = true;
+            continue;
+        }
+        return (rest, aligned);
+    }
+}
+
 fn scalar_type(tables: &mut Tables, text: &str) -> Option<TypeId> {
     let signed = text.starts_with('i');
     if (signed || text.starts_with('u')) && text.len() > 1 {
@@ -158,13 +182,13 @@ fn resolve(tables: &mut Tables, resolver: &mut Resolver, scope: &Scope, text: &s
         return push_optional_type(tables, element);
     }
     if let Some(rest) = text.strip_prefix("[]") {
-        let element = resolve(
-            tables,
-            resolver,
-            scope,
-            rest.trim_start_matches("const ").trim(),
-        );
-        return push_slice_type(tables, element);
+        let (inner, aligned) = strip_qualifiers(rest);
+        let element = resolve(tables, resolver, scope, inner);
+        let slice = push_slice_type(tables, element);
+        if aligned {
+            set_type_flags(tables, slice, TYPE_FLAG_OVER_ALIGNED);
+        }
+        return slice;
     }
     // `[N]T` is a fixed array, and the count is the only part of it Rust needs
     // that the element type does not already carry.
@@ -188,13 +212,13 @@ fn resolve(tables: &mut Tables, resolver: &mut Resolver, scope: &Scope, text: &s
         return push_array_type(tables, element, count, size);
     }
     if let Some(rest) = text.strip_prefix('*') {
-        let element = resolve(
-            tables,
-            resolver,
-            scope,
-            rest.trim_start_matches("const ").trim(),
-        );
-        return push_pointer_type(tables, element);
+        let (inner, aligned) = strip_qualifiers(rest);
+        let element = resolve(tables, resolver, scope, inner);
+        let pointer = push_pointer_type(tables, element);
+        if aligned {
+            set_type_flags(tables, pointer, TYPE_FLAG_OVER_ALIGNED);
+        }
+        return pointer;
     }
     if let Some(kind) = scalar_type(tables, text) {
         return kind;

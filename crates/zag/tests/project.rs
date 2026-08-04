@@ -7,6 +7,7 @@
 //! answers rather than crashes.
 
 use std::path::{Path, PathBuf};
+use zag_analysis::ownership::OwnershipClass;
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -418,4 +419,93 @@ fn a_field_the_zig_reallocates_comes_out_grown_rather_than_owned() {
     let output = zag::generate(&tables).expect("the tables port");
     let source = String::from_utf8(output.source).expect("the port is text");
     assert!(source.contains("pub data: Vec<u8>,"), "{source}");
+}
+
+fn class_of(project: &zag_frontend::project::Project, wanted: &[u8]) -> OwnershipClass {
+    let tables = zag_frontend::build_project(project, "x86_64-linux");
+    assert_eq!(zag_facts::validate::validate(&tables), Ok(()));
+    let analysis = zag_analysis::analyze(&tables);
+    let field = tables
+        .fields
+        .name
+        .iter()
+        .position(|name| zag_facts::tables::string_bytes(&tables.strings, *name) == wanted)
+        .unwrap_or_else(|| panic!("the program declares {:?}", String::from_utf8_lossy(wanted)));
+    analysis.ownership.class[field]
+}
+
+/// Every field a `deinit` frees has to keep its own free. An argument row names
+/// the callee rather than the call, so two frees in one function are the case
+/// where that goes wrong, and it goes wrong by leaving the second field looking
+/// like nothing frees it.
+#[test]
+fn both_fields_a_deinit_frees_come_out_owned() {
+    let directory = scratch("two-frees");
+    let root = write(
+        &directory,
+        "main.zig",
+        "const std = @import(\"std\");\n\
+         pub const Pair = struct {\n\
+         \x20   head: []const u8,\n\
+         \x20   tail: []const u8,\n\
+         \x20   pub fn init(allocator: std.mem.Allocator, one: []const u8, two: []const u8) !Pair {\n\
+         \x20       return .{\n\
+         \x20           .head = try allocator.dupe(u8, one),\n\
+         \x20           .tail = try allocator.dupe(u8, two),\n\
+         \x20       };\n\
+         \x20   }\n\
+         \x20   pub fn deinit(self: *Pair, allocator: std.mem.Allocator) void {\n\
+         \x20       allocator.free(self.head);\n\
+         \x20       allocator.free(self.tail);\n\
+         \x20   }\n\
+         };\n\
+         pub fn makePair(one: []const u8, two: []const u8) !Pair {\n\
+         \x20   return Pair.init(std.heap.c_allocator, one, two);\n\
+         }\n\
+         pub fn main() void {}\n",
+    );
+    let Some(project) = read(&root) else { return };
+    assert_eq!(class_of(&project, b"head"), OwnershipClass::Owned);
+    assert_eq!(class_of(&project, b"tail"), OwnershipClass::Owned);
+}
+
+/// Rust puts alignment on the type and Zig puts it on the allocation, so every
+/// class the analysis could reach would write one that quietly relaxes what the
+/// Zig asked for. Refusing is the answer, and the port has to be a type that
+/// compiles while it says so.
+#[test]
+fn a_field_asking_for_an_alignment_gets_no_class_and_still_ports_to_rust() {
+    let directory = scratch("over-aligned");
+    let root = write(
+        &directory,
+        "main.zig",
+        "const std = @import(\"std\");\n\
+         pub const Frame = struct {\n\
+         \x20   pixels: []align(16) u8,\n\
+         \x20   pub fn init(allocator: std.mem.Allocator, bytes: []align(16) u8) Frame {\n\
+         \x20       return .{ .pixels = bytes };\n\
+         \x20   }\n\
+         \x20   pub fn deinit(self: *Frame, allocator: std.mem.Allocator) void {\n\
+         \x20       allocator.free(self.pixels);\n\
+         \x20   }\n\
+         };\n\
+         pub fn main() void {}\n",
+    );
+    let Some(project) = read(&root) else { return };
+    assert_eq!(class_of(&project, b"pixels"), OwnershipClass::Unknown);
+    let tables = zag_frontend::build_project(&project, "x86_64-linux");
+    let output = zag::generate(&tables).expect("the tables port");
+    let source = String::from_utf8(output.source).expect("the port is text");
+    // The alignment was a qualifier on the element, not part of its name, so
+    // nothing the port writes may still be spelling it.
+    assert!(!source.contains("align("), "{source}");
+    assert!(
+        source.contains("pub pixels: Option<core::ptr::NonNull<[u8]>>,"),
+        "{source}"
+    );
+    let report = String::from_utf8(output.report).expect("the report is text");
+    assert!(
+        report.contains("the Zig asks for an alignment no port of this field can carry"),
+        "{report}"
+    );
 }

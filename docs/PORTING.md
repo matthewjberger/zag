@@ -90,6 +90,7 @@ port means the port has a pointer nobody owns.
 | `allocator does not resolve to one allocator` | two callers disagree. One of them is a bug, or the function needs splitting |
 | `no assignment to this field was found` | nothing in the program writes this field |
 | `resized after allocation, so its length is not fixed` | a `realloc` reaches this field, which is why it is a `Vec` rather than a `Box<[T]>` |
+| `the Zig asks for an alignment no port of this field can carry` | the field is `[]align(N) T` or `*align(N) T`. Decide what carries the alignment before anything else, because no ownership class can |
 
 A `warning:` line above the fields means allocator provenance did not settle.
 Every allocator below it is understated, so treat the whole report as
@@ -288,11 +289,17 @@ Two shapes have no row because they carry no length: `[*]T` and `[*:0]u8`. A
 many-item pointer is a raw pointer plus a length you have to find, and a
 sentinel pointer is one whose length is a scan away. Both need a person.
 
-An allocation with an alignment the Zig asked for, `[]align(16) u8` or anything
-from `allocator.alignedAlloc`, has no row either. `Box<[T]>` carries the
-alignment of `T` and nothing more, so a port that drops the request is one
-alignment fault away from a crash on a platform that cares. Check every
-`align(` in the Zig by hand.
+A field with an alignment the Zig asked for, `[]align(16) T` or `*align(16) T`,
+gets no class at all. `Box<[T]>` carries the alignment of `T` and nothing more,
+and Rust puts alignment on the type rather than on the allocation, so every
+class would write something that quietly relaxes the request, and a port that
+does that is one alignment fault away from a crash on a platform that cares.
+The report says which field and why, and the answer is a wrapper type carrying
+`#[repr(align(N))]` rather than a different ownership class.
+
+`allocator.alignedAlloc` is a separate reason for the same outcome: it is not
+one of the spellings the frontend reads as an allocation, so the field it fills
+has no allocation evidence and lands on `unknown` too.
 
 `owned` becomes `Box<[T]>`, which is right only for a field whose length never
 changes after it is assigned. A field a `realloc` reaches is `grown` instead

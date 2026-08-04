@@ -1,10 +1,10 @@
 use crate::call_graph::{CallGraph, mark_reachable};
 use crate::provenance::{AllocatorClass, Provenance, classify_source, join};
 use zag_facts::tables::{
-    AssignmentSource, MemoryOperationKind, PlaceKind, Tables, field_count, function_count,
-    is_reference_type, memory_operation_count,
+    AssignmentSource, MemoryOperationKind, PlaceKind, TYPE_FLAG_OVER_ALIGNED, Tables, field_count,
+    function_count, is_reference_type, memory_operation_count,
 };
-use zag_facts::{FieldId, FunctionId, NO_INDEX};
+use zag_facts::{FieldId, FunctionId, NO_INDEX, TypeId};
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -43,6 +43,7 @@ pub enum EvidenceKind {
     AllocatorIsConflicting = 8,
     NoAssignmentsFound = 9,
     ResizedAfterAllocation = 10,
+    AlignmentCannotBeCarried = 11,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -130,6 +131,31 @@ pub fn build_field_index(tables: &Tables) -> FieldIndex {
         assignment_start,
         assignment_rows,
     }
+}
+
+/// Whether the Zig asked for an alignment the port has nowhere to put. Looks
+/// through an optional the same way the reference test does, because the
+/// request sits on the slice inside it.
+fn over_aligned(tables: &Tables, kind: TypeId, depth: u32) -> bool {
+    if depth >= 8 {
+        return false;
+    }
+    let index = kind.0 as usize;
+    if tables
+        .types
+        .flags
+        .get(index)
+        .is_some_and(|flags| flags & TYPE_FLAG_OVER_ALIGNED != 0)
+    {
+        return true;
+    }
+    tables
+        .types
+        .element
+        .get(index)
+        .copied()
+        .filter(|element| element.0 != NO_INDEX && *element != kind)
+        .is_some_and(|element| over_aligned(tables, element, depth + 1))
 }
 
 #[derive(Clone, Copy, Default)]
@@ -391,12 +417,27 @@ pub fn classify_ownership(
         let start = ownership.evidence_kind.len() as u32;
         let (class, confidence) = match tables.fields.field_type.get(row).copied() {
             Some(kind) if is_reference_type(&tables.types, kind) => {
+                // Recorded first, because where it applies it is the reason the
+                // rest of the evidence did not settle anything.
+                let aligned = over_aligned(tables, kind, 0);
+                if aligned {
+                    ownership
+                        .evidence_kind
+                        .push(EvidenceKind::AlignmentCannotBeCarried);
+                    ownership.evidence_function.push(FunctionId(NO_INDEX));
+                }
                 let free =
                     gather_free_facts(tables, graph, &mut closure, &index, field, &mut ownership);
                 let resized = gather_resize_facts(tables, &index, field, &mut ownership);
                 let assignment =
                     gather_assignment_facts(tables, provenance, &index, field, &mut ownership);
-                decide(free, assignment, resized)
+                // Rust puts alignment on the type, so every class below would
+                // write one that quietly relaxes what the Zig asked for.
+                if aligned {
+                    (OwnershipClass::Unknown, Confidence::Low)
+                } else {
+                    decide(free, assignment, resized)
+                }
             }
             Some(_) => (OwnershipClass::Value, Confidence::High),
             None => (OwnershipClass::Unknown, Confidence::Low),

@@ -40,6 +40,9 @@ fn evidence_text(kind: EvidenceKind) -> &'static [u8] {
         EvidenceKind::ResizedAfterAllocation => {
             b"resized after allocation, so its length is not fixed"
         }
+        EvidenceKind::AlignmentCannotBeCarried => {
+            b"the Zig asks for an alignment no port of this field can carry"
+        }
     }
 }
 

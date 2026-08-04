@@ -53,6 +53,10 @@ pub struct Artifacts {
 }
 
 pub const TYPE_FLAG_SIGNED: u32 = 1 << 0;
+/// The Zig asked for an alignment stricter than the element's own. Rust puts
+/// alignment on the type rather than on the allocation, so nothing the port
+/// writes for a slice or a pointer can carry the request.
+pub const TYPE_FLAG_OVER_ALIGNED: u32 = 1 << 1;
 
 pub const STRUCT_FLAG_EXTERN: u32 = 1 << 0;
 

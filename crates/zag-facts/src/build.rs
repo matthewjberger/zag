@@ -61,6 +61,12 @@ pub fn declare_artifact(
     ArtifactId(artifact_count(artifacts) as u32 - 1)
 }
 
+pub fn set_type_flags(tables: &mut Tables, kind: TypeId, flags: u32) {
+    if let Some(slot) = tables.types.flags.get_mut(kind.0 as usize) {
+        *slot |= flags;
+    }
+}
+
 pub fn set_type_module(tables: &mut Tables, kind: TypeId, module: ModuleId) {
     if let Some(slot) = tables.types.module.get_mut(kind.0 as usize) {
         *slot = module;
